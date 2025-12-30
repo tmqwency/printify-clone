@@ -120,21 +120,29 @@ const ManageOrders = () => {
     );
   };
 
-  const handleViewDetails = async (orderId) => {
-    Meteor.call("orders.getDetails", orderId, async (error, orderDetails) => {
+  const handleViewDetails = (orderId) => {
+    Meteor.call("orders.getDetails", orderId, (error, orderDetails) => {
       if (error) {
         toast.error("Failed to load order details");
         console.error(error);
       } else {
         // Fetch provider if assigned
         if (orderDetails.assignedProviderId) {
-          const provider = await Providers.findOneAsync(
-            orderDetails.assignedProviderId
+          Meteor.call(
+            "providers.getById",
+            orderDetails.assignedProviderId,
+            (provError, provider) => {
+              if (!provError && provider) {
+                orderDetails.assignedProvider = provider;
+              }
+              setSelectedOrder(orderDetails);
+              setShowDetailsModal(true);
+            }
           );
-          orderDetails.assignedProvider = provider;
+        } else {
+          setSelectedOrder(orderDetails);
+          setShowDetailsModal(true);
         }
-        setSelectedOrder(orderDetails);
-        setShowDetailsModal(true);
       }
     });
   };

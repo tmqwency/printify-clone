@@ -5,6 +5,7 @@ import { Orders } from '../collections/orders';
 import { OrderItems } from '../collections/order-items';
 import { FulfillmentJobs } from '../collections/fulfillment-jobs';
 import { Meteor } from 'meteor/meteor';
+import { findBestProvider, calculateProviderCost } from '../lib/provider-assignment';
 
 // Middleware to parse JSON body
 WebApp.connectHandlers.use('/api/v1', (req, res, next) => {
@@ -242,12 +243,35 @@ WebApp.connectHandlers.use('/api/v1/orders', async (req, res, next) => {
                 });
             }
 
+            // Auto-assign provider
+            const order = await Orders.findOneAsync(orderId);
+            const bestProvider = await findBestProvider(order, 'balanced');
+
+            let providerCost = 0;
+            let assignedProviderId = null;
+
+            if (bestProvider) {
+                providerCost = calculateProviderCost(bestProvider, order);
+                assignedProviderId = bestProvider._id;
+
+                // Update order with provider info
+                await Orders.updateAsync(orderId, {
+                    $set: {
+                        assignedProviderId,
+                        providerCost,
+                        assignmentMethod: 'auto',
+                        updatedAt: new Date()
+                    }
+                });
+            }
+
             res.statusCode = 201;
             res.end(JSON.stringify({
                 success: true,
                 message: 'Order created successfully',
                 order_id: orderId,
-                external_order_id: orderData.external_order_id
+                external_order_id: orderData.external_order_id,
+                assigned_provider: assignedProviderId
             }));
 
         } catch (error) {
