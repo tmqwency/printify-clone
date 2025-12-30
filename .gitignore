@@ -1,0 +1,16 @@
+node_modules/
+.meteor/local
+*.log
+.DS_Store
+.env
+settings-production.json
+build/
+tmp/
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+*.iml
+coverage/
+.nyc_output/

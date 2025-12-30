@@ -1,0 +1,41 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - ROOT_URL=http://localhost:3000
+      - MONGO_URL=mongodb://mongo:27017/printify
+      - PORT=3000
+    depends_on:
+      - mongo
+    volumes:
+      - ./settings-production.json:/app/settings.json
+    command: node main.js --settings /app/settings.json
+
+  mongo:
+    image: mongo:6
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    environment:
+      - MONGO_INITDB_DATABASE=printify
+
+  # RabbitMQ for future job queue implementation
+  rabbitmq:
+    image: rabbitmq:3-management
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      - RABBITMQ_DEFAULT_USER=printify
+      - RABBITMQ_DEFAULT_PASS=printify123
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+
+volumes:
+  mongo-data:
+  rabbitmq-data:
