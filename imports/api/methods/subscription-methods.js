@@ -4,6 +4,7 @@ import { requireAuth, verifyStoreOwnership } from '/imports/api/users/users';
 import { Subscriptions } from '/imports/api/collections/subscriptions';
 import { Stores } from '/imports/api/collections/stores';
 import { AuditLogs } from '/imports/api/collections/audit-logs';
+import StripeService from '/imports/api/services/stripe-service';
 
 // Plan definitions
 export const SUBSCRIPTION_PLANS = {
@@ -71,6 +72,101 @@ Meteor.methods({
     },
 
     /**
+     * Create a checkout session for subscription
+     */
+    async 'subscriptions.createCheckoutSession'(storeId, planTier, billingCycle = 'monthly') {
+        check(storeId, String);
+        check(planTier, String);
+        check(billingCycle, String);
+
+        const userId = requireAuth.call(this);
+        await verifyStoreOwnership(userId, storeId);
+
+        // Validate plan
+        if (!SUBSCRIPTION_PLANS[planTier] || planTier === 'free') {
+            throw new Meteor.Error('invalid-plan', 'Invalid subscription plan');
+        }
+
+        const subscription = await Subscriptions.findOneAsync({ storeId });
+        if (!subscription) {
+            throw new Meteor.Error('not-found', 'Subscription not found');
+        }
+
+        const user = await Meteor.users.findOneAsync(userId);
+        const store = await Stores.findOneAsync(storeId);
+
+        // Create or get Stripe customer
+        let stripeCustomerId = subscription.stripeCustomerId;
+        
+        if (!stripeCustomerId) {
+            const customer = await StripeService.createCustomer({
+                email: user.emails[0].address,
+                name: user.profile?.name || user.emails[0].address,
+                metadata: {
+                    userId,
+                    storeId,
+                    storeName: store.name
+                }
+            });
+            
+            stripeCustomerId = customer.id;
+            
+            // Save customer ID
+            await Subscriptions.updateAsync(subscription._id, {
+                $set: { stripeCustomerId }
+            });
+        }
+
+        // Get price ID for plan
+        const priceId = StripeService.getPriceId(planTier, billingCycle);
+
+        // Create checkout session
+        const baseUrl = Meteor.absoluteUrl();
+        const session = await StripeService.createCheckoutSession({
+            customerId: stripeCustomerId,
+            priceId,
+            successUrl: `${baseUrl}subscription/success?session_id={CHECKOUT_SESSION_ID}`,
+            cancelUrl: `${baseUrl}subscription/cancel`,
+            metadata: {
+                userId,
+                storeId,
+                planTier,
+                billingCycle
+            }
+        });
+
+        return {
+            sessionId: session.id,
+            url: session.url
+        };
+    },
+
+    /**
+     * Create a customer portal session
+     */
+    async 'subscriptions.createPortalSession'(storeId) {
+        check(storeId, String);
+
+        const userId = requireAuth.call(this);
+        await verifyStoreOwnership(userId, storeId);
+
+        const subscription = await Subscriptions.findOneAsync({ storeId });
+        if (!subscription || !subscription.stripeCustomerId) {
+            throw new Meteor.Error('not-found', 'No Stripe customer found');
+        }
+
+        const baseUrl = Meteor.absoluteUrl();
+        const session = await StripeService.createPortalSession(
+            subscription.stripeCustomerId,
+            `${baseUrl}subscription`
+        );
+
+        return {
+            url: session.url
+        };
+    },
+
+    /**
      * Upgrade/downgrade subscription plan
      */
     async 'subscriptions.changePlan'(storeId, newPlan) {
@@ -92,9 +188,14 @@ Meteor.methods({
 
         const oldPlan = subscription.planTier;
 
-        // Mock Stripe subscription update
-        // In production, this would call Stripe API
-        console.log(`💳 [MOCK] Changing plan from ${oldPlan} to ${newPlan}`);
+        // Update Stripe subscription if it exists
+        if (subscription.stripeSubscriptionId && newPlan !== 'free') {
+            const newPriceId = StripeService.getPriceId(newPlan, subscription.billingCycle);
+            await StripeService.updateSubscription(subscription.stripeSubscriptionId, newPriceId);
+            console.log(`💳 Updated Stripe subscription from ${oldPlan} to ${newPlan}`);
+        } else {
+            console.log(`💳 Plan changed from ${oldPlan} to ${newPlan} (no Stripe subscription)`);
+        }
 
         // Update subscription
         await Subscriptions.updateAsync(subscription._id, {
@@ -207,8 +308,9 @@ Meteor.methods({
     /**
      * Cancel subscription
      */
-    async 'subscriptions.cancel'(storeId) {
+    async 'subscriptions.cancel'(storeId, cancelImmediately = false) {
         check(storeId, String);
+        check(cancelImmediately, Boolean);
 
         const userId = requireAuth.call(this);
         await verifyStoreOwnership(userId, storeId);
@@ -218,14 +320,20 @@ Meteor.methods({
             throw new Meteor.Error('not-found', 'Subscription not found');
         }
 
-        // Mock Stripe cancellation
-        console.log(`💳 [MOCK] Canceling subscription for store ${storeId}`);
+        // Cancel Stripe subscription if it exists
+        if (subscription.stripeSubscriptionId) {
+            await StripeService.cancelSubscription(
+                subscription.stripeSubscriptionId,
+                !cancelImmediately // cancelAtPeriodEnd
+            );
+            console.log(`💳 Cancelled Stripe subscription for store ${storeId}`);
+        }
 
         // Update subscription
         await Subscriptions.updateAsync(subscription._id, {
             $set: {
-                status: 'cancelled',
-                cancelAtPeriodEnd: true,
+                status: cancelImmediately ? 'cancelled' : 'active',
+                cancelAtPeriodEnd: !cancelImmediately,
                 canceledAt: new Date(),
                 updatedAt: new Date()
             }

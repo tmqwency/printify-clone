@@ -1,9 +1,11 @@
 import React, { useState } from "react";
 import { Link } from "react-router-dom";
 import { FaChevronDown } from "react-icons/fa";
+import { useAuth } from "../contexts/AuthContext";
 
 const Navigation = () => {
   const [activeDropdown, setActiveDropdown] = useState(null);
+  const { isAuthenticated, logout } = useAuth();
 
   const navItems = [
     { label: "Catalog", path: "/catalog" },
@@ -106,18 +108,37 @@ const Navigation = () => {
 
           {/* Auth Buttons */}
           <div className="flex items-center gap-4">
-            <Link
-              to="/login"
-              className="text-gray-700 hover:text-primary-500 font-medium transition-colors"
-            >
-              Log in
-            </Link>
-            <Link
-              to="/signup"
-              className="bg-primary-500 text-white px-6 py-2 rounded-lg hover:bg-primary-600 font-medium transition-colors"
-            >
-              Sign up for free
-            </Link>
+            {isAuthenticated ? (
+              <>
+                <Link
+                  to="/dashboard"
+                  className="text-gray-700 hover:text-primary-500 font-medium transition-colors"
+                >
+                  Dashboard
+                </Link>
+                <button
+                  onClick={logout}
+                  className="bg-gray-100 text-gray-700 px-6 py-2 rounded-lg hover:bg-gray-200 font-medium transition-colors"
+                >
+                  Log out
+                </button>
+              </>
+            ) : (
+              <>
+                <Link
+                  to="/login"
+                  className="text-gray-700 hover:text-primary-500 font-medium transition-colors"
+                >
+                  Log in
+                </Link>
+                <Link
+                  to="/signup"
+                  className="bg-primary-500 text-white px-6 py-2 rounded-lg hover:bg-primary-600 font-medium transition-colors"
+                >
+                  Sign up for free
+                </Link>
+              </>
+            )}
           </div>
         </div>
       </div>

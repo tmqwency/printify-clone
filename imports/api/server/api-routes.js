@@ -58,8 +58,11 @@ WebApp.connectHandlers.use('/api/v1/products', async (req, res, next) => {
 
     if (req.method === 'GET') {
         try {
-            // Get all custom products for this user
-            const products = await UserProducts.find({ userId: store.userId }).fetchAsync();
+            // Get all published custom products for this user
+            const products = await UserProducts.find({ 
+                userId: store.userId,
+                status: 'published'
+            }).fetchAsync();
 
             const formattedProducts = products.map(p => {
                 // Get main image from previewImages (prefer 'front', fallback to first available)

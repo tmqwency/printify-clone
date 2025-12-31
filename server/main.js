@@ -1,5 +1,8 @@
 import { Meteor } from "meteor/meteor";
 
+// Import admin seed
+import "./seed-admin";
+
 // Import methods
 import "../imports/api/methods/product-methods";
 import "../imports/api/methods/design-methods";
@@ -12,10 +15,12 @@ import "../imports/api/methods/auth-methods";
 import "../imports/api/methods/stock-image-methods";
 import "../imports/api/methods/provider-methods";
 import "./reset-products"; // Admin method to reset products
+import "../imports/api/methods/stripe-setup-methods"; // Stripe setup methods
 
 // Import collections
 import { Products } from "../imports/api/collections/products";
 import "../imports/api/server/api-routes"; // Register REST API routes
+import "../imports/api/server/stripe-webhook"; // Register Stripe webhook
 import { UserProducts } from "../imports/api/collections/UserProducts";
 import { Designs } from "../imports/api/collections/designs";
 import { Orders } from "../imports/api/collections/orders";

@@ -16,8 +16,8 @@
       }
     },
     "stripe": {
-      "secretKey": "sk_test_MOCK_STRIPE_KEY",
-      "publishableKey": "pk_test_MOCK_STRIPE_KEY",
+      "secretKey": "sk_test_51SkRiFPpNQufD1wYvPZ3nadjeXos880rgOvZD8hjHqq3soTVnXS8SXP6UiWui9rMNbC2P4KVHRDmGbhc4eMxRptv00ExOi2gZl",
+      "publishableKey": "pk_test_51SkRiFPpNQufD1wYf97jppr0g1Kjtztaq5TWdTEat5FAHXsZJvrlW9rpL2KKFC22biAZbcb8k2HYaf94S6E8CLXI00z7NrFIsv",
       "webhookSecret": "whsec_MOCK_WEBHOOK_SECRET"
     },
     "storage": {

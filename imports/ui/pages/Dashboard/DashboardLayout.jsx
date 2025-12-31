@@ -34,8 +34,9 @@ const DashboardLayout = () => {
     return currentUser?.profile?.isAdmin === true;
   }, []);
 
-  // Check if current route is Design Studio
-  const isDesignStudio = location.pathname.startsWith("/dashboard/designs");
+  // Check if current route is Design Studio (handles both singular and plural routes)
+  const isDesignStudio = location.pathname.includes("/dashboard/design");
+  console.log("Current path:", location.pathname, "isDesignStudio:", isDesignStudio);
 
   const handleLogout = async () => {
     try {
@@ -66,13 +67,13 @@ const DashboardLayout = () => {
 
   return (
     <div className="min-h-screen bg-gray-50">
-      {/* Top Navigation */}
-      <nav className="bg-white border-b border-gray-200 fixed w-full z-30">
-        <div className="px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between h-16">
-            <div className="flex items-center">
-              {/* Mobile menu button - hide in design studio */}
-              {!isDesignStudio && (
+      {/* Top Navigation - hide in design studio */}
+      {!isDesignStudio && (
+        <nav className="bg-white border-b border-gray-200 fixed w-full z-30">
+          <div className="px-4 sm:px-6 lg:px-8">
+            <div className="flex justify-between h-16">
+              <div className="flex items-center">
+                {/* Mobile menu button */}
                 <button
                   onClick={() => setSidebarOpen(!sidebarOpen)}
                   className="lg:hidden p-2 rounded-md text-gray-600 hover:text-gray-900 hover:bg-gray-100"
@@ -83,32 +84,32 @@ const DashboardLayout = () => {
                     <FaBars className="text-xl" />
                   )}
                 </button>
-              )}
 
-              {/* Logo */}
-              <Link to="/dashboard" className="flex items-center ml-4 lg:ml-0">
-                <h1 className="text-2xl font-bold text-primary-500">
-                  Printify
-                </h1>
-              </Link>
-            </div>
+                {/* Logo */}
+                <Link to="/dashboard" className="flex items-center ml-4 lg:ml-0">
+                  <h1 className="text-2xl font-bold text-primary-500">
+                    Printify
+                  </h1>
+                </Link>
+              </div>
 
-            {/* Right side */}
-            <div className="flex items-center gap-4">
-              <span className="text-sm text-gray-700">
-                {user?.emails?.[0]?.address || user?.profile?.name || "User"}
-              </span>
-              <button
-                onClick={handleLogout}
-                className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
-              >
-                <FaSignOutAlt />
-                <span className="hidden sm:inline">Logout</span>
-              </button>
+              {/* Right side */}
+              <div className="flex items-center gap-4">
+                <span className="text-sm text-gray-700">
+                  {user?.emails?.[0]?.address || user?.profile?.name || "User"}
+                </span>
+                <button
+                  onClick={handleLogout}
+                  className="flex items-center gap-2 px-4 py-2 text-sm text-gray-700 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
+                >
+                  <FaSignOutAlt />
+                  <span className="hidden sm:inline">Logout</span>
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      </nav>
+        </nav>
+      )}
 
       {/* Sidebar - hide in design studio */}
       {!isDesignStudio && (
@@ -213,9 +214,9 @@ const DashboardLayout = () => {
         </aside>
       )}
 
-      {/* Main Content - adjust margin based on design studio */}
-      <main className={`${isDesignStudio ? "" : "lg:ml-64"} pt-16`}>
-        <div className={isDesignStudio ? "" : "p-6"}>
+      {/* Main Content - adjust margin and padding based on design studio */}
+      <main className={`${isDesignStudio ? "" : "lg:ml-64 pt-16"}`}>
+        <div className={isDesignStudio ? "h-screen" : "p-6"}>
           <Outlet />
         </div>
       </main>

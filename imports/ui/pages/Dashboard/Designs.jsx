@@ -11,7 +11,18 @@ import {
   Rect,
 } from "react-konva";
 import useImage from "use-image";
+import { Designs as DesignsCollection } from "../../../api/collections/designs";
 import StockImagesPanel from "./components/StockImagesPanel";
+import FontSelector from "./components/FontSelector";
+import ShapesPanel from "./components/ShapesPanel";
+import CollapsibleSidebar from "./components/CollapsibleSidebar";
+import {
+  DesignRect,
+  DesignCircle,
+  DesignLine,
+  DesignArrow,
+  DesignStar,
+} from "./components/ShapeComponents";
 import {
   FaUpload,
   FaFont,
@@ -27,7 +38,7 @@ import { Products } from "../../../api/collections/products";
 
 // Konva Image Component
 const DesignImage = ({ image, isSelected, onSelect, onChange }) => {
-  const [img] = useImage(image.src);
+  const [img] = useImage(image.src, 'anonymous');
   const shapeRef = useRef();
   const trRef = useRef();
 
@@ -161,6 +172,17 @@ const Designs = () => {
   const [textInput, setTextInput] = useState("");
   const [textColor, setTextColor] = useState("#000000");
   const [fontSize, setFontSize] = useState(24);
+  
+  // Enhanced text formatting states
+  const [fontFamily, setFontFamily] = useState("Inter");
+  const [fontWeight, setFontWeight] = useState("400");
+  const [textAlign, setTextAlign] = useState("left");
+  const [letterSpacing, setLetterSpacing] = useState(0);
+  const [lineHeight, setLineHeight] = useState(1.2);
+  const [isBold, setIsBold] = useState(false);
+  const [isItalic, setIsItalic] = useState(false);
+  const [isUnderline, setIsUnderline] = useState(false);
+  
   const [editingProductId, setEditingProductId] = useState(null); // Track if editing existing product
   const [pendingEditProduct, setPendingEditProduct] = useState(null); // Store fetched product while waiting for base products to load
   const [isFetchingEdit, setIsFetchingEdit] = useState(false); // Prevent duplicate fetches
@@ -257,10 +279,11 @@ const Designs = () => {
     setRenderInfo({ scale: 1, offsetX: 0, offsetY: 0 });
   }, [selectedProduct?.id, currentPrintAreaIndex]);
 
-  // Fetch products from database
-  const { products, productsLoading } = useTracker(() => {
-    const handle = Meteor.subscribe("products.all");
-
+  // Fetch user's uploaded designs and products
+  const { products, productsLoading, userDesigns, designsLoading } = useTracker(() => {
+    const productsHandle = Meteor.subscribe("products.all");
+    const designsHandle = Meteor.subscribe("designs.mine");
+    
     // Design mockup templates for each product type and side
     const mockupTemplates = {
       "t-shirt": {
@@ -280,9 +303,16 @@ const Designs = () => {
       poster: {
         full: "/images/mockups/poster-template.png",
       },
+      // Fallback
+      default: {
+        front: "/images/mockups/tshirt-template.png",
+      },
     };
 
     return {
+      productsLoading: !productsHandle.ready(),
+      designsLoading: !designsHandle.ready(),
+      userDesigns: DesignsCollection.find({}, { sort: { createdAt: -1 } }).fetch(),
       products: Products.find({ status: "active" })
         .fetch()
         .map((p) => {
@@ -325,7 +355,6 @@ const Designs = () => {
             mockupSize: { width: 800, height: 900 },
           };
         }),
-      productsLoading: !handle.ready(),
     };
   }, []);
 
@@ -770,6 +799,15 @@ const Designs = () => {
       return;
     }
 
+    // Calculate actual font weight based on bold toggle
+    const actualFontWeight = isBold ? '700' : fontWeight;
+    
+    // Build font style string
+    const fontStyle = isItalic ? 'italic' : 'normal';
+    
+    // Build text decoration
+    const textDecoration = isUnderline ? 'underline' : '';
+
     const newElement = {
       id: `text-${Date.now()}`,
       type: "text",
@@ -778,37 +816,52 @@ const Designs = () => {
       y: 50,
       fontSize: fontSize,
       fill: textColor,
-      fontFamily: "Inter",
+      fontFamily: fontFamily,
+      fontStyle: fontStyle,
+      fontVariant: actualFontWeight,
+      textDecoration: textDecoration,
+      align: textAlign,
+      letterSpacing: letterSpacing,
+      lineHeight: lineHeight,
     };
     setCanvasElements((prev) => [...prev, newElement]);
     setTextInput("");
     toast.success("Text added to canvas!");
   };
 
+  // Add shape to canvas
+  const addShapeToCanvas = (shape) => {
+    if (!selectedProduct) {
+      toast.error("Please select a product first!");
+      return;
+    }
+
+    setCanvasElements((prev) => [...prev, shape]);
+    toast.success(`${shape.type.charAt(0).toUpperCase() + shape.type.slice(1)} added to canvas!`);
+  };
+
+  // Switch between print areas (front/back)
   // Switch between print areas (front/back)
   const switchPrintArea = (index) => {
-    if (!selectedProduct || !selectedProduct.printAreas) return;
+    if (!selectedProduct || !selectedProduct.printAreas || index === currentPrintAreaIndex) return;
 
-    // Save current canvas state to the map using functional update to ensure latest state
-    setCanvasStates((prev) => {
-      const newStates = {
-        ...prev,
-        [currentPrintAreaIndex]: canvasElements,
-      };
+    // 1. Get the latest canvas elements for the CURRENT side
+    const currentElements = canvasElements;
 
-      // Load canvas state for new print area (or use existing if available in newStates)
-      // Check if we have state for the new index in our updated map
-      const nextElements = newStates[index] || [];
+    // 2. Update the master state map with current elements
+    const updatedStates = {
+      ...canvasStates,
+      [currentPrintAreaIndex]: currentElements,
+    };
+    setCanvasStates(updatedStates);
 
-      // Need to defer this state update effectively
-      setTimeout(() => {
-        setCanvasElements(nextElements);
-        setSelectedId(null);
-        setCurrentPrintAreaIndex(index);
-      }, 0);
+    // 3. Load the elements for the NEW side (or empty array if none exist yet)
+    const nextElements = updatedStates[index] || [];
+    setCanvasElements(nextElements);
 
-      return newStates;
-    });
+    // 4. Update the index and reset selection
+    setCurrentPrintAreaIndex(index);
+    setSelectedId(null);
   };
 
   const deleteSelected = () => {
@@ -970,114 +1023,55 @@ const Designs = () => {
   return (
     <div className="h-screen flex flex-col overflow-hidden">
       {/* Header with Back Button */}
-      <div className="flex-shrink-0 mb-4 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => navigate("/dashboard/products")}
-            className="flex items-center gap-2 px-3 py-2 text-gray-600 hover:text-gray-900 hover:bg-gray-100 rounded-lg transition-colors"
-          >
-            <FaArrowLeft />
-            Back to Products
-          </button>
-          <div>
-            <h1 className="text-2xl font-bold text-gray-900">Design Studio</h1>
-            {selectedProduct && (
-              <p className="text-sm text-gray-600 mt-1">
-                Designing: {selectedProduct.name}
-              </p>
-            )}
-          </div>
-        </div>
-      </div>
 
-      <div className="flex-1 grid grid-cols-12 gap-4 overflow-hidden min-h-0">
-        {/* Left Sidebar - Design Library */}
-        <div className="col-span-2 bg-white rounded-xl shadow-soft p-4 overflow-y-auto flex flex-col">
-          <div className="mb-4">
-            <h2 className="text-base font-semibold text-gray-900 mb-3">
-              Design Library
-            </h2>
 
-            {/* Tab Switcher */}
-            <div className="flex gap-2 mb-3">
-              <button
-                onClick={() => setActiveLibraryTab("uploads")}
-                className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  activeLibraryTab === "uploads"
-                    ? "bg-primary-500 text-white"
-                    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                }`}
-              >
-                My Uploads
-              </button>
-              <button
-                onClick={() => setActiveLibraryTab("stock")}
-                className={`flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors ${
-                  activeLibraryTab === "stock"
-                    ? "bg-primary-500 text-white"
-                    : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                }`}
-              >
-                Stock Images
-              </button>
-            </div>
+      <div className="flex-1 flex overflow-hidden min-h-0">
+        {/* Collapsible Sidebar */}
+        <CollapsibleSidebar
+          selectedProduct={selectedProduct}
+          onShapeAdd={addShapeToCanvas}
+          textInput={textInput}
+          setTextInput={setTextInput}
+          fontFamily={fontFamily}
+          fontWeight={fontWeight}
+          fontSize={fontSize}
+          textColor={textColor}
+          textAlign={textAlign}
+          letterSpacing={letterSpacing}
+          lineHeight={lineHeight}
+          isBold={isBold}
+          isItalic={isItalic}
+          isUnderline={isUnderline}
+          setFontFamily={setFontFamily}
+          setFontWeight={setFontWeight}
+          setFontSize={setFontSize}
+          setTextColor={setTextColor}
+          setTextAlign={setTextAlign}
+          setLetterSpacing={setLetterSpacing}
+          setLineHeight={setLineHeight}
+          setIsBold={setIsBold}
+          setIsItalic={setIsItalic}
+          setIsUnderline={setIsUnderline}
+          addTextToCanvas={addTextToCanvas}
+          designs={designs}
+          activeLibraryTab={activeLibraryTab}
+          setActiveLibraryTab={setActiveLibraryTab}
+          fileInputRef={fileInputRef}
+          handleFileUpload={handleFileUpload}
+          addDesignToCanvas={addDesignToCanvas}
+          addStockImageToCanvas={addStockImageToCanvas}
+          productName={productName}
+          setProductName={setProductName}
+          saveCustomProduct={saveCustomProduct}
+          isSaving={isSaving}
+          editingProductId={editingProductId}
+          ShapesPanel={ShapesPanel}
+          FontSelector={FontSelector}
+          StockImagesPanel={StockImagesPanel}
+        />
 
-            {activeLibraryTab === "uploads" && (
-              <>
-                <button
-                  onClick={() => fileInputRef.current.click()}
-                  className="w-full flex items-center justify-center gap-2 bg-primary-500 text-white px-3 py-2 rounded-lg hover:bg-primary-600 transition-colors text-sm"
-                >
-                  <FaUpload />
-                  Upload Design
-                </button>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  multiple
-                  onChange={handleFileUpload}
-                  className="hidden"
-                />
-              </>
-            )}
-          </div>
-
-          <div className="flex-1 overflow-y-auto">
-            {activeLibraryTab === "uploads" && (
-              <div className="space-y-2">
-                {designs.map((design) => (
-                  <div
-                    key={design.id}
-                    className="border border-gray-200 rounded-lg p-3 cursor-pointer hover:border-primary-500 transition-colors"
-                    onClick={() => addDesignToCanvas(design)}
-                  >
-                    <img
-                      src={design.src}
-                      alt={design.name}
-                      className="w-full h-24 object-contain bg-gray-50 rounded mb-2"
-                    />
-                    <p className="text-sm text-gray-700 truncate">
-                      {design.name}
-                    </p>
-                  </div>
-                ))}
-                {designs.length === 0 && (
-                  <p className="text-gray-500 text-sm text-center py-8">
-                    No designs yet. Upload your first design!
-                  </p>
-                )}
-              </div>
-            )}
-
-            {activeLibraryTab === "stock" && (
-              <StockImagesPanel onImageSelect={addStockImageToCanvas} />
-            )}
-          </div>
-        </div>
-
-        {/* Center - Product Mockup with Canvas Overlay */}
-        <div className="col-span-7 bg-white rounded-xl shadow-soft p-4 flex flex-col">
+        {/* Center - Product Mockup with Canvas Overlay (Expanded) */}
+        <div className="flex-1 bg-white shadow-soft p-4 flex flex-col ml-4">
           <div className="mb-3 flex items-center justify-between">
             <h2 className="text-base font-semibold text-gray-900">
               Product Preview
@@ -1296,6 +1290,86 @@ const Designs = () => {
                               }}
                             />
                           );
+                        } else if (element.type === "rectangle") {
+                          return (
+                            <DesignRect
+                              key={element.id}
+                              shape={element}
+                              isSelected={element.id === selectedId}
+                              onSelect={() => setSelectedId(element.id)}
+                              onChange={(newAttrs) => {
+                                setCanvasElements((prev) =>
+                                  prev.map((el) =>
+                                    el.id === element.id ? newAttrs : el
+                                  )
+                                );
+                              }}
+                            />
+                          );
+                        } else if (element.type === "circle") {
+                          return (
+                            <DesignCircle
+                              key={element.id}
+                              shape={element}
+                              isSelected={element.id === selectedId}
+                              onSelect={() => setSelectedId(element.id)}
+                              onChange={(newAttrs) => {
+                                setCanvasElements((prev) =>
+                                  prev.map((el) =>
+                                    el.id === element.id ? newAttrs : el
+                                  )
+                                );
+                              }}
+                            />
+                          );
+                        } else if (element.type === "line") {
+                          return (
+                            <DesignLine
+                              key={element.id}
+                              shape={element}
+                              isSelected={element.id === selectedId}
+                              onSelect={() => setSelectedId(element.id)}
+                              onChange={(newAttrs) => {
+                                setCanvasElements((prev) =>
+                                  prev.map((el) =>
+                                    el.id === element.id ? newAttrs : el
+                                  )
+                                );
+                              }}
+                            />
+                          );
+                        } else if (element.type === "arrow") {
+                          return (
+                            <DesignArrow
+                              key={element.id}
+                              shape={element}
+                              isSelected={element.id === selectedId}
+                              onSelect={() => setSelectedId(element.id)}
+                              onChange={(newAttrs) => {
+                                setCanvasElements((prev) =>
+                                  prev.map((el) =>
+                                    el.id === element.id ? newAttrs : el
+                                  )
+                                );
+                              }}
+                            />
+                          );
+                        } else if (element.type === "star") {
+                          return (
+                            <DesignStar
+                              key={element.id}
+                              shape={element}
+                              isSelected={element.id === selectedId}
+                              onSelect={() => setSelectedId(element.id)}
+                              onChange={(newAttrs) => {
+                                setCanvasElements((prev) =>
+                                  prev.map((el) =>
+                                    el.id === element.id ? newAttrs : el
+                                  )
+                                );
+                              }}
+                            />
+                          );
                         }
                         return null;
                       })}
@@ -1317,120 +1391,6 @@ const Designs = () => {
               </div>
             </div>
           )}
-        </div>
-
-        {/* Right Sidebar - Tools & Products */}
-        <div className="col-span-3 bg-white rounded-xl shadow-soft p-4 overflow-y-auto">
-          {/* Product Details */}
-          {selectedProduct && (
-            <div className="mb-4">
-              <div className="border-2 border-gray-200 rounded-lg p-4 bg-white">
-                <img
-                  src={selectedProduct.productImage}
-                  alt={selectedProduct.name}
-                  className="w-full h-40 object-cover rounded-lg mb-3"
-                />
-                <h3 className="text-base font-bold text-gray-900 mb-2">
-                  {selectedProduct.name}
-                </h3>
-                {selectedProduct.description && (
-                  <p className="text-xs text-gray-600 mb-3 line-clamp-2">
-                    {selectedProduct.description}
-                  </p>
-                )}
-                <div className="flex items-center justify-between mb-3">
-                  <span className="text-xs text-gray-500 uppercase">
-                    {selectedProduct.type}
-                  </span>
-                  <span className="text-lg font-bold text-primary-600">
-                    ${(selectedProduct.basePrice / 100).toFixed(2)}
-                  </span>
-                </div>
-                {selectedProduct.printArea && (
-                  <div className="text-xs text-gray-600 bg-gray-50 rounded p-2">
-                    <p className="font-medium text-gray-700 mb-1">
-                      Print Area:
-                    </p>
-                    <p>
-                      {selectedProduct.printArea.width}px ×{" "}
-                      {selectedProduct.printArea.height}px
-                    </p>
-                  </div>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Text Tool */}
-          <div className="mb-6">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-              <FaFont /> Add Text
-            </h2>
-            <input
-              type="text"
-              value={textInput}
-              onChange={(e) => setTextInput(e.target.value)}
-              placeholder="Enter text..."
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg mb-2 focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-            />
-            <div className="grid grid-cols-2 gap-2 mb-2">
-              <div>
-                <label className="text-xs text-gray-600">Font Size</label>
-                <input
-                  type="number"
-                  value={fontSize}
-                  onChange={(e) => setFontSize(Number(e.target.value))}
-                  className="w-full px-2 py-1 border border-gray-300 rounded text-sm"
-                  min="8"
-                  max="72"
-                />
-              </div>
-              <div>
-                <label className="text-xs text-gray-600">Color</label>
-                <input
-                  type="color"
-                  value={textColor}
-                  onChange={(e) => setTextColor(e.target.value)}
-                  className="w-full h-8 border border-gray-300 rounded cursor-pointer"
-                />
-              </div>
-            </div>
-            <button
-              onClick={addTextToCanvas}
-              className="w-full bg-gray-700 text-white px-4 py-2 rounded-lg hover:bg-gray-800 transition-colors"
-            >
-              Add Text
-            </button>
-          </div>
-
-          {/* Save Product */}
-          <div>
-            <h2 className="text-lg font-semibold text-gray-900 mb-4 flex items-center gap-2">
-              <FaSave /> Save Product
-            </h2>
-            <input
-              type="text"
-              value={productName}
-              onChange={(e) => setProductName(e.target.value)}
-              placeholder="Product name..."
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg mb-3 focus:ring-2 focus:ring-primary-500 focus:border-transparent"
-            />
-            <button
-              onClick={saveCustomProduct}
-              disabled={isSaving}
-              className={`w-full py-3 rounded-lg transition-colors font-semibold ${
-                isSaving
-                  ? "bg-gray-400 cursor-not-allowed"
-                  : "bg-primary-500 text-white hover:bg-primary-600"
-              }`}
-            >
-              {isSaving
-                ? "Saving..."
-                : editingProductId
-                ? "Update Product"
-                : "Save Product"}
-            </button>
-          </div>
         </div>
       </div>
     </div>

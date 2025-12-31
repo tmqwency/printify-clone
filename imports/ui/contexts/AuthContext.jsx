@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from "react";
 import { Meteor } from "meteor/meteor";
 import { Accounts } from "meteor/accounts-base";
+import { useTracker } from "meteor/react-meteor-data";
 
 const AuthContext = createContext();
 
@@ -13,24 +14,25 @@ export const useAuth = () => {
 };
 
 export const AuthProvider = ({ children }) => {
-  const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    // Check if user is logged in
-    const checkUser = () => {
-      const currentUser = Meteor.user();
-      setUser(currentUser);
-      setLoading(false);
+  // Use Meteor's reactive data source to track user state
+  const { user, isLoggingIn } = useTracker(() => {
+    const currentUser = Meteor.user();
+    const loggingIn = Meteor.loggingIn();
+    
+    return {
+      user: currentUser,
+      isLoggingIn: loggingIn
     };
-
-    checkUser();
-
-    // Subscribe to user changes
-    const handle = Meteor.subscribe("userData");
-
-    return () => handle.stop();
   }, []);
+
+  useEffect(() => {
+    // Set loading to false once Meteor finishes checking login state
+    if (!isLoggingIn) {
+      setLoading(false);
+    }
+  }, [isLoggingIn]);
 
   const login = async (email, password) => {
     return new Promise((resolve, reject) => {
@@ -38,7 +40,6 @@ export const AuthProvider = ({ children }) => {
         if (error) {
           reject(error);
         } else {
-          setUser(Meteor.user());
           resolve();
         }
       });
@@ -57,7 +58,6 @@ export const AuthProvider = ({ children }) => {
           if (error) {
             reject(error);
           } else {
-            setUser(Meteor.user());
             resolve();
           }
         }
@@ -68,7 +68,6 @@ export const AuthProvider = ({ children }) => {
   const logout = async () => {
     return new Promise((resolve) => {
       Meteor.logout(() => {
-        setUser(null);
         resolve();
       });
     });

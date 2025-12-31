@@ -87,14 +87,58 @@ const Billing = () => {
   ];
 
   useEffect(() => {
-    fetchSubscriptionData();
+    // Only fetch data if user is logged in
+    if (Meteor.userId()) {
+      fetchSubscriptionData();
+    } else {
+      setLoading(false);
+      toast.error("Please log in to view billing information");
+    }
   }, []);
 
   const fetchSubscriptionData = async () => {
     setLoading(true);
     try {
-      // Get current store (mock for now)
-      const storeId = "mock-store-id";
+      console.log('Fetching subscription data, userId:', Meteor.userId());
+      
+      // Get user's stores
+      let stores = await new Promise((resolve, reject) => {
+        Meteor.call("stores.list", (error, result) => {
+          if (error) {
+            console.error('stores.list error:', error);
+            reject(error);
+          }
+          else resolve(result);
+        });
+      });
+
+      // If no stores exist, create a default one
+      if (!stores || stores.length === 0) {
+        const storeId = await new Promise((resolve, reject) => {
+          Meteor.call(
+            "stores.create",
+            {
+              name: "My Store",
+              description: "Default store",
+              platform: "web"
+            },
+            (error, result) => {
+              if (error) reject(error);
+              else resolve(result);
+            }
+          );
+        });
+        
+        // Fetch the newly created store
+        stores = await new Promise((resolve, reject) => {
+          Meteor.call("stores.list", (error, result) => {
+            if (error) reject(error);
+            else resolve(result);
+          });
+        });
+      }
+
+      const storeId = stores[0]._id;
 
       const [subData, usageData] = await Promise.all([
         new Promise((resolve, reject) => {
@@ -157,24 +201,61 @@ const Billing = () => {
 
   const confirmUpgrade = async () => {
     try {
-      const storeId = "mock-store-id";
-      await new Promise((resolve, reject) => {
-        Meteor.call(
-          "subscriptions.changePlan",
-          storeId,
-          selectedPlan,
-          (error) => {
-            if (error) reject(error);
-            else resolve();
-          }
-        );
+      // Get user's stores
+      const stores = await new Promise((resolve, reject) => {
+        Meteor.call("stores.list", (error, result) => {
+          if (error) reject(error);
+          else resolve(result);
+        });
       });
 
-      toast.success(`Successfully upgraded to ${selectedPlan} plan!`);
-      setShowUpgradeModal(false);
-      fetchSubscriptionData();
+      if (!stores || stores.length === 0) {
+        toast.error("No store found. Please try again.");
+        return;
+      }
+
+      const storeId = stores[0]._id;
+
+      // If upgrading to a paid plan, redirect to Stripe Checkout
+      if (selectedPlan !== 'free') {
+        toast.info('Redirecting to payment...');
+        
+        const result = await new Promise((resolve, reject) => {
+          Meteor.call(
+            "subscriptions.createCheckoutSession",
+            storeId,
+            selectedPlan,
+            'monthly', // Default to monthly billing
+            (error, result) => {
+              if (error) reject(error);
+              else resolve(result);
+            }
+          );
+        });
+
+        // Redirect to Stripe Checkout
+        window.location.href = result.url;
+      } else {
+        // For free plan, just change directly (downgrade)
+        await new Promise((resolve, reject) => {
+          Meteor.call(
+            "subscriptions.changePlan",
+            storeId,
+            selectedPlan,
+            (error) => {
+              if (error) reject(error);
+              else resolve();
+            }
+          );
+        });
+
+        toast.success(`Successfully changed to ${selectedPlan} plan!`);
+        setShowUpgradeModal(false);
+        fetchSubscriptionData();
+      }
     } catch (error) {
-      toast.error("Upgrade failed. Please try again.");
+      console.error("Upgrade error:", error);
+      toast.error(error.reason || "Upgrade failed. Please try again.");
     }
   };
 

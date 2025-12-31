@@ -34,6 +34,7 @@ import AdminUsers from "./pages/Dashboard/AdminUsers";
 import AdminDashboard from "./pages/Dashboard/AdminDashboard";
 import ManageOrders from "./pages/Dashboard/ManageOrders";
 import ManageProviders from "./pages/Dashboard/ManageProviders";
+import { CheckoutSuccessPage, CheckoutCancelPage } from "./pages/Checkout/CheckoutPage";
 
 export const App = () => {
   return (
@@ -198,6 +199,10 @@ export const App = () => {
             />
             <Route path="/login" element={<LoginPage />} />
             <Route path="/signup" element={<SignupPage />} />
+            
+            {/* Stripe Checkout Routes */}
+            <Route path="/subscription/success" element={<CheckoutSuccessPage />} />
+            <Route path="/subscription/cancel" element={<CheckoutCancelPage />} />
 
             {/* Dashboard Routes */}
             <Route path="/dashboard" element={<DashboardLayout />}>
