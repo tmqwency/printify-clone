@@ -97,11 +97,25 @@ const AdminDashboard = () => {
               subtext="All time orders"
             />
             <StatCard
-              title="Total Revenue"
+              title="Total Revenue (GMV)"
               value={formatCurrency(stats.totalRevenue)}
               icon={FaMoneyBillWave}
               color="bg-green-500"
-              subtext="Gross sales"
+              subtext="Completed orders"
+            />
+            <StatCard
+              title="Merchant Revenue"
+              value={formatCurrency(stats.merchantRevenue || 0)}
+              icon={FaMoneyBillWave}
+              color="bg-teal-500"
+              subtext="Merchant profits"
+            />
+            <StatCard
+              title="Provider Revenue"
+              value={formatCurrency(stats.providerRevenue || 0)}
+              icon={FaMoneyBillWave}
+              color="bg-indigo-500"
+              subtext="Production costs"
             />
           </div>
 

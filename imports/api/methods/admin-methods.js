@@ -1,5 +1,7 @@
 import { Meteor } from 'meteor/meteor';
 import { Accounts } from 'meteor/accounts-base';
+import { Orders } from '../collections/orders';
+import { Stores } from '../collections/stores';
 
 Meteor.methods({
     /**
@@ -79,18 +81,22 @@ Meteor.methods({
             orders,
             stores
         ] = await Promise.all([
-            Meteor.users.find().countAsync(),
+            Meteor.users.find({ 'profile.isAdmin': { $ne: true } }).countAsync(),
             Orders.find().countAsync(),
-            Orders.find({}, { fields: { total: 1 } }).fetchAsync(),
-            Stores.find({ status: { $ne: 'archived' } }).countAsync()
+            Orders.find({ status: { $in: ['delivered', 'shipped'] } }).fetchAsync(),
+            Stores.find({ status: 'active' }).countAsync()
         ]);
 
         const totalRevenue = orders.reduce((sum, order) => sum + (order.total || 0), 0);
+        const merchantRevenue = orders.reduce((sum, order) => sum + (order.profit || 0), 0);
+        const providerRevenue = orders.reduce((sum, order) => sum + (order.productionCost || 0), 0);
 
         return {
             totalUsers,
             totalOrders,
             totalRevenue,
+            merchantRevenue,
+            providerRevenue,
             activeStores: stores
         };
     },
