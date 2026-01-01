@@ -23,6 +23,20 @@ Meteor.methods({
         const userId = requireAuth.call(this);
         await verifyStoreOwnership(userId, designData.storeId);
 
+        // Check storage limits
+        const { Subscriptions } = await import('../../api/collections/subscriptions');
+        const subscription = await Subscriptions.findOneAsync({ userId }, { sort: { updatedAt: -1 } });
+        
+        const fileSizeMB = designData.fileSize / (1024 * 1024);
+
+        if (subscription) {
+            const { limits, usage } = subscription;
+            // Check if adding this file would exceed the limit
+            if (limits.maxStorageMB !== -1 && (usage.storageUsedMB + fileSizeMB) > limits.maxStorageMB) {
+                throw new Meteor.Error('limit-reached', 'Storage limit exceeded. Please upgrade your plan or delete old designs.');
+            }
+        }
+
         // Create design
         const designId = await Designs.insertAsync({
             ...designData,
@@ -32,6 +46,13 @@ Meteor.methods({
             createdAt: new Date(),
             updatedAt: new Date()
         });
+
+        // Increment storage usage
+        if (subscription) {
+            await Subscriptions.updateAsync(subscription._id, {
+                $inc: { 'usage.storageUsedMB': fileSizeMB }
+            });
+        }
 
         // Log action
         await AuditLogs.insertAsync({
@@ -175,6 +196,19 @@ Meteor.methods({
 
         const userId = requireAuth.call(this);
 
+        // Check storage limits
+        const { Subscriptions } = await import('../../api/collections/subscriptions');
+        const subscription = await Subscriptions.findOneAsync({ userId }, { sort: { updatedAt: -1 } });
+        
+        const fileSizeMB = designData.fileSize / (1024 * 1024);
+
+        if (subscription) {
+            const { limits, usage } = subscription;
+            if (limits.maxStorageMB !== -1 && (usage.storageUsedMB + fileSizeMB) > limits.maxStorageMB) {
+                throw new Meteor.Error('limit-reached', 'Storage limit exceeded. Please upgrade your plan or delete old designs.');
+            }
+        }
+
         const designId = await Designs.insertAsync({
             userId,
             name: designData.name,
@@ -185,6 +219,13 @@ Meteor.methods({
             createdAt: new Date(),
             updatedAt: new Date()
         });
+
+        // Increment storage usage
+        if (subscription) {
+            await Subscriptions.updateAsync(subscription._id, {
+                $inc: { 'usage.storageUsedMB': fileSizeMB }
+            });
+        }
 
         return designId;
     },
@@ -212,6 +253,22 @@ Meteor.methods({
         const design = await Designs.findOneAsync({ _id: designId, userId });
         if (!design) {
             throw new Meteor.Error('not-found', 'Design not found');
+        }
+
+        // Decrement storage usage
+        const fileSizeMB = (design.fileSize || 0) / (1024 * 1024);
+        
+        const { Subscriptions } = await import('../../api/collections/subscriptions');
+        const subscription = await Subscriptions.findOneAsync({ userId }, { sort: { updatedAt: -1 } });
+
+        if (subscription && fileSizeMB > 0) {
+            // Ensure we don't go below 0
+            const currentUsage = subscription.usage.storageUsedMB || 0;
+            const newUsage = Math.max(0, currentUsage - fileSizeMB);
+            
+            await Subscriptions.updateAsync(subscription._id, {
+                $set: { 'usage.storageUsedMB': newUsage }
+            });
         }
 
         await Designs.removeAsync(designId);

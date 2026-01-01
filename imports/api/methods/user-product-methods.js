@@ -14,11 +14,35 @@ Meteor.methods({
             description: String,
             baseProductId: String,
             designData: Object,
-            previewImages: Match.Optional(Object),
-            price: Number,
+            previewImages: Object,
+            price: Number
         });
 
         const userId = requireAuth.call(this);
+
+        // Calculate storage size (mockups + design data)
+        const designDataSize = JSON.stringify(productData.designData).length;
+        const previewImagesSize = Object.values(productData.previewImages).reduce((acc, imgStr) => acc + (imgStr ? imgStr.length : 0), 0);
+        const totalSizeByte = designDataSize + previewImagesSize;
+        const totalSizeMB = totalSizeByte / (1024 * 1024);
+
+        // Check subscription limits
+        const { Subscriptions } = await import('../../api/collections/subscriptions');
+        const subscription = await Subscriptions.findOneAsync({ userId }, { sort: { updatedAt: -1 } });
+        
+        if (subscription) {
+            const { limits, usage } = subscription;
+
+            // Check Product Limit
+            if (limits.maxProducts !== -1 && usage.productsCreated >= limits.maxProducts) {
+                 throw new Meteor.Error('limit-reached', 'You have reached your product limit. Please upgrade your plan.');
+            }
+
+            // Check Storage Limit
+            if (limits.maxStorageMB !== -1 && (usage.storageUsedMB + totalSizeMB) > limits.maxStorageMB) {
+                throw new Meteor.Error('limit-reached', 'Storage limit exceeded (Product design is too large). Please upgrade your plan.');
+            }
+        }
 
         // Verify base product exists
         const baseProduct = await Products.findOneAsync(productData.baseProductId);
@@ -26,79 +50,117 @@ Meteor.methods({
             throw new Meteor.Error('not-found', 'Base product not found');
         }
 
-        // Create user product
-        const productId = await UserProducts.insertAsync({
+        const userProductId = await UserProducts.insertAsync({
             ...productData,
             userId,
             status: 'draft',
             sales: 0,
             createdAt: new Date(),
-            updatedAt: new Date()
+            updatedAt: new Date(),
+            storageSize: totalSizeByte // Store size for future reference
         });
 
-        return productId;
+        // Increment usage
+        if (subscription) {
+            await Subscriptions.updateAsync(subscription._id, {
+                $inc: { 
+                    'usage.productsCreated': 1,
+                    'usage.storageUsedMB': totalSizeMB
+                }
+            });
+        }
+
+        return userProductId;
     },
 
     /**
-     * Update a user product
+     * Get user products
      */
-    async 'userProducts.update'(productId, productData) {
-        check(productId, String);
-        check(productData, {
-            name: String,
-            description: String,
-            designData: Object,
-            previewImages: Match.Optional(Object),
-        });
-
+    async 'userProducts.list'() {
         const userId = requireAuth.call(this);
-
-        // Verify product exists and belongs to user
-        const product = await UserProducts.findOneAsync(productId);
-        if (!product) {
-            throw new Meteor.Error('not-found', 'Product not found');
-        }
-        if (product.userId !== userId) {
-            throw new Meteor.Error('not-authorized', 'You can only update your own products');
-        }
-
-        // Update product
-        await UserProducts.updateAsync(productId, {
-            $set: {
-                ...productData,
-                updatedAt: new Date()
-            }
-        });
-
-        return { success: true };
+        return await UserProducts.find({ userId }).fetchAsync();
     },
 
     /**
-     * Get a user product by ID
+     * Get single user product
      */
-    async 'userProducts.getById'(productId) {
-        check(productId, String);
-
+    async 'userProducts.getById'(id) {
+        check(id, String);
         const userId = requireAuth.call(this);
-
-        const product = await UserProducts.findOneAsync(productId);
+        
+        const product = await UserProducts.findOneAsync({ _id: id, userId });
         if (!product) {
             throw new Meteor.Error('not-found', 'Product not found');
         }
-        if (product.userId !== userId) {
-            throw new Meteor.Error('not-authorized', 'You can only view your own products');
-        }
-
         return product;
     },
 
     /**
-     * Delete a user product
+     * Update user product
+     */
+    async 'userProducts.update'(id, updates) {
+        check(id, String);
+        check(updates, Object);
+
+        const userId = requireAuth.call(this);
+
+        const product = await UserProducts.findOneAsync({ _id: id, userId });
+        if (!product) {
+            throw new Meteor.Error('not-found', 'Product not found');
+        }
+
+        // Calculate new size if design/previews changed
+        let sizeDiffMB = 0;
+        let newTotalSizeBytes = product.storageSize || 0;
+
+        if (updates.designData || updates.previewImages) {
+            const oldSize = product.storageSize || 0;
+            
+            const designData = updates.designData || product.designData;
+            const previewImages = updates.previewImages || product.previewImages;
+
+            const designDataSize = JSON.stringify(designData).length;
+            const previewImagesSize = Object.values(previewImages).reduce((acc, imgStr) => acc + (imgStr ? imgStr.length : 0), 0);
+            newTotalSizeBytes = designDataSize + previewImagesSize;
+
+            const sizeDiffBytes = newTotalSizeBytes - oldSize;
+            sizeDiffMB = sizeDiffBytes / (1024 * 1024);
+        }
+
+        // Check storage limit if size is increasing
+        const { Subscriptions } = await import('../../api/collections/subscriptions');
+        const subscription = await Subscriptions.findOneAsync({ userId }, { sort: { updatedAt: -1 } });
+
+        if (subscription && sizeDiffMB > 0) {
+             const { limits, usage } = subscription;
+             if (limits.maxStorageMB !== -1 && (usage.storageUsedMB + sizeDiffMB) > limits.maxStorageMB) {
+                throw new Meteor.Error('limit-reached', 'Storage limit exceeded. Cannot update product.');
+            }
+        }
+
+        await UserProducts.updateAsync(id, {
+            $set: {
+                ...updates,
+                storageSize: newTotalSizeBytes,
+                updatedAt: new Date()
+            }
+        });
+
+        // Update usage if size changed
+        if (subscription && Math.abs(sizeDiffMB) > 0) {
+             await Subscriptions.updateAsync(subscription._id, {
+                $inc: { 'usage.storageUsedMB': sizeDiffMB }
+            });
+        }
+
+        return true;
+    },
+
+    /**
+     * Delete user product
      */
     async 'userProducts.delete'(productId) {
         check(productId, String);
-
-        const userId = requireAuth.call(this);
 
         // Verify product exists and belongs to user
         const product = await UserProducts.findOneAsync(productId);
@@ -111,6 +173,16 @@ Meteor.methods({
 
         // Delete product
         await UserProducts.removeAsync(productId);
+
+        // Decrement usage
+        const { Subscriptions } = await import('../../api/collections/subscriptions');
+        const subscription = await Subscriptions.findOneAsync({ userId }, { sort: { updatedAt: -1 } });
+
+        if (subscription && subscription.usage.productsCreated > 0) {
+            await Subscriptions.updateAsync(subscription._id, {
+                $inc: { 'usage.productsCreated': -1 }
+            });
+        }
 
         return { success: true };
     },

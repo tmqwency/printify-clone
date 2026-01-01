@@ -46,6 +46,26 @@ const authenticateRequest = async (req, res) => {
         return null;
     }
 
+    // Track API Usage
+    const { Subscriptions } = await import('../collections/subscriptions');
+    const subscription = await Subscriptions.findOneAsync({ userId: store.userId }, { sort: { updatedAt: -1 } });
+
+    if (subscription) {
+        // Increment usage
+        await Subscriptions.updateAsync(subscription._id, {
+            $inc: { 'usage.apiCallsThisMonth': 1 }
+        });
+
+        // Check limits (soft limit for now, or strict?)
+        // Let's enforce it to match user expectation of "limits"
+        const { limits, usage } = subscription;
+        if (limits.maxApiCalls !== -1 && usage.apiCallsThisMonth >= limits.maxApiCalls) {
+             res.statusCode = 429;
+             res.end(JSON.stringify({ error: 'API rate limit exceeded for your plan' }));
+             return null;
+        }
+    }
+
     return store;
 };
 

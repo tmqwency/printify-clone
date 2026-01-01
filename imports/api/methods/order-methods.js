@@ -27,6 +27,21 @@ Meteor.methods({
         const userId = requireAuth.call(this);
         await verifyStoreOwnership(userId, orderData.storeId);
 
+        // Check subscription limits
+        const { Subscriptions } = await import('/imports/api/collections/subscriptions');
+        // Find subscription by userId since it's linked to the user, not directly the store in schema yet
+        // Assuming one subscription per user for all stores, or we need to look up owner of store if userId is not passed (but requireAuth is used)
+        const subscription = await Subscriptions.findOneAsync({ userId }, { sort: { updatedAt: -1 } });
+
+        if (subscription) {
+            const { limits, usage } = subscription;
+            if (limits.maxOrders !== -1 && usage.ordersThisMonth >= limits.maxOrders) {
+                 // For automated orders we might want to log this failure instead of throwing, 
+                 // but for now we block to protect resources
+                throw new Meteor.Error('limit-reached', 'You have reached your monthly order limit. Please upgrade your plan.');
+            }
+        }
+
         // Check for duplicate order
         const existingOrder = await Orders.findOneAsync({
             storeId: orderData.storeId,
@@ -135,6 +150,13 @@ Meteor.methods({
             createdAt: new Date(),
             updatedAt: new Date()
         });
+
+        // Increment usage
+        if (subscription) {
+            await Subscriptions.updateAsync(subscription._id, {
+                $inc: { 'usage.ordersThisMonth': 1 }
+            });
+        }
 
         return orderId;
     },

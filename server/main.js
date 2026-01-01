@@ -16,6 +16,7 @@ import "../imports/api/methods/stock-image-methods";
 import "../imports/api/methods/provider-methods";
 import "./reset-products"; // Admin method to reset products
 import "../imports/api/methods/stripe-setup-methods"; // Stripe setup methods
+import "../imports/api/methods/usage-methods";
 
 // Import collections
 import { Products } from "../imports/api/collections/products";

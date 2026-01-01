@@ -126,6 +126,11 @@ const Billing = () => {
         }
       });
       setLoading(false);
+      
+      // Sync usage with actual data (fire and forget)
+      if (trackedSubscription) {
+          Meteor.call('subscriptions.syncUsage');
+      }
     } else if (!loadingSubscription && userId) {
         setLoading(false);
     }
@@ -329,7 +334,7 @@ const Billing = () => {
               <div className="flex justify-between text-sm mb-2">
                 <span className="text-gray-700">Storage</span>
                 <span className="text-gray-600">
-                  {usageStats.usage.storageUsedMB} MB /{" "}
+                  {Number(usageStats.usage.storageUsedMB).toFixed(2)} MB /{" "}
                   {usageStats.limits.maxStorageMB === -1
                     ? "∞"
                     : `${usageStats.limits.maxStorageMB} MB`}
