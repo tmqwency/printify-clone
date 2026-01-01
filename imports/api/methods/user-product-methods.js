@@ -162,6 +162,8 @@ Meteor.methods({
     async 'userProducts.delete'(productId) {
         check(productId, String);
 
+        const userId = requireAuth.call(this);
+
         // Verify product exists and belongs to user
         const product = await UserProducts.findOneAsync(productId);
         if (!product) {
@@ -174,14 +176,29 @@ Meteor.methods({
         // Delete product
         await UserProducts.removeAsync(productId);
 
-        // Decrement usage
+        // Decrement usage (Products + Storage)
         const { Subscriptions } = await import('../../api/collections/subscriptions');
         const subscription = await Subscriptions.findOneAsync({ userId }, { sort: { updatedAt: -1 } });
 
-        if (subscription && subscription.usage.productsCreated > 0) {
-            await Subscriptions.updateAsync(subscription._id, {
-                $inc: { 'usage.productsCreated': -1 }
-            });
+        if (subscription) {
+            const updates = {};
+            
+            if (subscription.usage.productsCreated > 0) {
+                updates['usage.productsCreated'] = -1;
+            }
+
+            // Decrement storage if product had size tracked
+            if (product.storageSize) {
+                const sizeMB = product.storageSize / (1024 * 1024);
+                // Ensure we don't go below 0 (though mongo handles this, logic matters)
+                updates['usage.storageUsedMB'] = -sizeMB;
+            }
+
+            if (Object.keys(updates).length > 0) {
+                 await Subscriptions.updateAsync(subscription._id, {
+                    $inc: updates
+                });
+            }
         }
 
         return { success: true };
