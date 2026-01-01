@@ -23,7 +23,7 @@ import {
 import { useState } from "react";
 
 const DashboardLayout = () => {
-  const { user, logout } = useAuth();
+  const { user, logout, isLoggingIn, loading } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -34,9 +34,16 @@ const DashboardLayout = () => {
     return currentUser?.profile?.isAdmin === true;
   }, []);
 
-  // Check if current route is Design Studio (handles both singular and plural routes)
+  // Protect the route
+  React.useEffect(() => {
+    // Only redirect if we are done loading and strictly have no user
+    if (!loading && !isLoggingIn && !user) {
+      navigate("/login");
+    }
+  }, [loading, isLoggingIn, user, navigate]);
+
+  // Check if current route is Design Studio
   const isDesignStudio = location.pathname.includes("/dashboard/design");
-  console.log("Current path:", location.pathname, "isDesignStudio:", isDesignStudio);
 
   const handleLogout = async () => {
     try {
@@ -65,6 +72,15 @@ const DashboardLayout = () => {
     return location.pathname.startsWith(path);
   };
 
+  // Show loading state while checking auth
+  if (loading || isLoggingIn) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-500"></div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-gray-50">
       {/* Top Navigation - hide in design studio */}
@@ -86,10 +102,10 @@ const DashboardLayout = () => {
                 </button>
 
                 {/* Logo */}
-                <Link to="/dashboard" className="flex items-center ml-4 lg:ml-0">
-                  <h1 className="text-2xl font-bold text-primary-500">
-                    Printify
-                  </h1>
+                <Link to="/" className="flex items-center ml-4 lg:ml-0">
+                  <div className="text-2xl font-bold bg-primary-500 text-white rounded w-10 h-10 flex items-center justify-center">
+                    <span className="-rotate-12">P</span>
+                  </div>
                 </Link>
               </div>
 

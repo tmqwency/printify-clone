@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from "react";
 import { Meteor } from "meteor/meteor";
 import { toast } from "react-toastify";
+import { useTracker } from "meteor/react-meteor-data";
 import {
   FaCheck,
   FaCrown,
@@ -8,6 +9,8 @@ import {
   FaBuilding,
   FaChartLine,
 } from "react-icons/fa";
+
+import { Subscriptions } from "../../../api/collections/subscriptions";
 
 const Billing = () => {
   const [subscription, setSubscription] = useState(null);
@@ -78,121 +81,55 @@ const Billing = () => {
         "Unlimited products",
         "Unlimited API calls",
         "Unlimited storage",
-        "Dedicated support",
-        "Advanced analytics",
-        "Custom branding",
-        "White-label option",
       ],
     },
   ];
 
-  useEffect(() => {
-    // Only fetch data if user is logged in
-    if (Meteor.userId()) {
-      fetchSubscriptionData();
-    } else {
-      setLoading(false);
-      toast.error("Please log in to view billing information");
-    }
+  // Reactively track user status and subscription
+  const { user, userId, isLoggingIn, subscription: trackedSubscription, loadingSubscription } = useTracker(() => {
+    const user = Meteor.user();
+    const userId = Meteor.userId();
+    const isLoggingIn = Meteor.loggingIn();
+    
+    // Subscribe to subscriptions publication
+    const handle = Meteor.subscribe('subscriptions.mine');
+    const loading = !handle.ready();
+    // Get the most recently updated subscription
+    const subscription = Subscriptions.findOne({ userId }, { sort: { updatedAt: -1 } });
+
+    return {
+      user,
+      userId,
+      isLoggingIn,
+      subscription: subscription,
+      loadingSubscription: loading
+    };
   }, []);
 
-  const fetchSubscriptionData = async () => {
-    setLoading(true);
-    try {
-      console.log('Fetching subscription data, userId:', Meteor.userId());
-      
-      // Get user's stores
-      let stores = await new Promise((resolve, reject) => {
-        Meteor.call("stores.list", (error, result) => {
-          if (error) {
-            console.error('stores.list error:', error);
-            reject(error);
-          }
-          else resolve(result);
-        });
-      });
-
-      // If no stores exist, create a default one
-      if (!stores || stores.length === 0) {
-        const storeId = await new Promise((resolve, reject) => {
-          Meteor.call(
-            "stores.create",
-            {
-              name: "My Store",
-              description: "Default store",
-              platform: "web"
-            },
-            (error, result) => {
-              if (error) reject(error);
-              else resolve(result);
-            }
-          );
-        });
-        
-        // Fetch the newly created store
-        stores = await new Promise((resolve, reject) => {
-          Meteor.call("stores.list", (error, result) => {
-            if (error) reject(error);
-            else resolve(result);
-          });
-        });
-      }
-
-      const storeId = stores[0]._id;
-
-      const [subData, usageData] = await Promise.all([
-        new Promise((resolve, reject) => {
-          Meteor.call("subscriptions.get", storeId, (error, result) => {
-            if (error) reject(error);
-            else resolve(result);
-          });
-        }),
-        new Promise((resolve, reject) => {
-          Meteor.call(
-            "subscriptions.getUsageStats",
-            storeId,
-            (error, result) => {
-              if (error) reject(error);
-              else resolve(result);
-            }
-          );
-        }),
-      ]);
-
-      setSubscription(subData);
-      setUsageStats(usageData);
-    } catch (error) {
-      console.error("Failed to load subscription data:", error);
-      // Set mock data for demo
-      setSubscription({
-        planTier: "free",
-        status: "active",
-      });
+  // Update local state when subscription changes
+  useEffect(() => {
+    if (trackedSubscription) {
+      setSubscription(trackedSubscription);
       setUsageStats({
-        plan: "free",
-        usage: {
-          ordersThisMonth: 3,
-          productsCreated: 2,
-          apiCallsThisMonth: 150,
-          storageUsedMB: 25,
-        },
-        limits: {
-          maxOrders: 10,
-          maxProducts: 5,
-          maxApiCalls: 1000,
-          maxStorageMB: 100,
-        },
+        plan: trackedSubscription.planTier,
+        usage: trackedSubscription.usage,
+        limits: trackedSubscription.limits,
         percentages: {
-          orders: 30,
-          products: 40,
-          apiCalls: 15,
-          storage: 25,
-        },
+            orders: trackedSubscription.limits.maxOrders === -1 ? 0 : 
+                (trackedSubscription.usage.ordersThisMonth / trackedSubscription.limits.maxOrders) * 100,
+            products: trackedSubscription.limits.maxProducts === -1 ? 0 :
+                (trackedSubscription.usage.productsCreated / trackedSubscription.limits.maxProducts) * 100,
+            apiCalls: trackedSubscription.limits.maxApiCalls === -1 ? 0 :
+                (trackedSubscription.usage.apiCallsThisMonth / trackedSubscription.limits.maxApiCalls) * 100,
+            storage: trackedSubscription.limits.maxStorageMB === -1 ? 0 :
+                (trackedSubscription.usage.storageUsedMB / trackedSubscription.limits.maxStorageMB) * 100
+        }
       });
-    } finally {
       setLoading(false);
+    } else if (!loadingSubscription && userId) {
+        setLoading(false);
     }
-  };
+  }, [trackedSubscription, loadingSubscription, userId]);
 
   const handleUpgrade = (planId) => {
     setSelectedPlan(planId);

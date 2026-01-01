@@ -59,11 +59,11 @@ const Navigation = () => {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex justify-between items-center h-16">
           {/* Logo */}
-          <div className="flex items-center">
-            <Link to="/" className="text-2xl font-bold text-primary-500">
-              Printify
-            </Link>
-          </div>
+          <Link to="/" className="flex items-center ml-4 lg:ml-0">
+            <div className="text-2xl font-bold bg-primary-500 text-white rounded w-10 h-10 flex items-center justify-center">
+              <span className="-rotate-12">P</span>
+            </div>
+          </Link>
 
           {/* Navigation Items */}
           <div className="hidden lg:flex items-center space-x-1">

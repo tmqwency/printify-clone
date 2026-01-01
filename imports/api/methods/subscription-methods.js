@@ -1,13 +1,6 @@
 import { Meteor } from 'meteor/meteor';
 import { check, Match } from 'meteor/check';
-import { requireAuth, verifyStoreOwnership } from '/imports/api/users/users';
-import { Subscriptions } from '/imports/api/collections/subscriptions';
-import { Stores } from '/imports/api/collections/stores';
-import { AuditLogs } from '/imports/api/collections/audit-logs';
-import StripeService from '/imports/api/services/stripe-service';
-
-// Plan definitions
-export const SUBSCRIPTION_PLANS = {
+const SUBSCRIPTION_PLANS = {
     free: {
         name: 'Free',
         price: 0,
@@ -120,25 +113,59 @@ Meteor.methods({
         // Get price ID for plan
         const priceId = StripeService.getPriceId(planTier, billingCycle);
 
-        // Create checkout session
+        // Create checkout session function
         const baseUrl = Meteor.absoluteUrl();
-        const session = await StripeService.createCheckoutSession({
-            customerId: stripeCustomerId,
-            priceId,
-            successUrl: `${baseUrl}subscription/success?session_id={CHECKOUT_SESSION_ID}`,
-            cancelUrl: `${baseUrl}subscription/cancel`,
-            metadata: {
-                userId,
-                storeId,
-                planTier,
-                billingCycle
-            }
-        });
-
-        return {
-            sessionId: session.id,
-            url: session.url
+        const createSession = async (customerId) => {
+             return await StripeService.createCheckoutSession({
+                customerId: customerId,
+                priceId,
+                successUrl: `${baseUrl}subscription/success?session_id={CHECKOUT_SESSION_ID}`,
+                cancelUrl: `${baseUrl}subscription/cancel`,
+                metadata: {
+                    userId,
+                    storeId,
+                    planTier,
+                    billingCycle
+                }
+            });
         };
+
+        try {
+             // Create checkout session
+            const session = await createSession(stripeCustomerId);
+            return {
+                sessionId: session.id,
+                url: session.url
+            };
+        } catch (error) {
+            // If customer doesn't exist (e.g. switched Stripe keys), create new one and retry
+            if (error.reason && error.reason.includes('No such customer')) {
+                 console.log('⚠️ Stripe customer not found, creating new one...');
+                 
+                 const customer = await StripeService.createCustomer({
+                    email: user.emails[0].address,
+                    name: user.profile?.name || user.emails[0].address,
+                    metadata: {
+                        userId,
+                        storeId,
+                        storeName: store.name
+                    }
+                });
+                
+                // Update subscription with new customer ID
+                await Subscriptions.updateAsync(subscription._id, {
+                    $set: { stripeCustomerId: customer.id }
+                });
+                
+                // Retry with new customer ID
+                const session = await createSession(customer.id);
+                return {
+                    sessionId: session.id,
+                    url: session.url
+                };
+            }
+            throw error;
+        }
     },
 
     /**
@@ -324,12 +351,12 @@ Meteor.methods({
         if (subscription.stripeSubscriptionId) {
             await StripeService.cancelSubscription(
                 subscription.stripeSubscriptionId,
-                !cancelImmediately // cancelAtPeriodEnd
+                !cancelImmediately // if cancelImmediately is true, cancelAtPeriodEnd is false
             );
             console.log(`💳 Cancelled Stripe subscription for store ${storeId}`);
         }
 
-        // Update subscription
+        // Update local subscription
         await Subscriptions.updateAsync(subscription._id, {
             $set: {
                 status: cancelImmediately ? 'cancelled' : 'active',
@@ -352,6 +379,91 @@ Meteor.methods({
         });
 
         return true;
+    },
+
+    /**
+     * Sync subscription from checkout session
+     * (Called by client on success page to ensure immediate update)
+     */
+    async 'subscriptions.syncFromSession'(sessionId) {
+        check(sessionId, String);
+        
+        const userId = requireAuth.call(this);
+        console.log('🔄 Syncing subscription from session:', sessionId);
+
+        // 1. Retrieve the session to get subscription ID and customer
+        const session = await StripeService.stripe.checkout.sessions.retrieve(sessionId, {
+            expand: ['subscription', 'line_items']
+        });
+
+        if (!session) {
+            console.error('❌ Session not found:', sessionId);
+            throw new Meteor.Error('not-found', 'Session not found');
+        }
+
+        console.log('📦 Stripe Session Data:', {
+            metadata: session.metadata,
+            customer: session.customer,
+            subId: session.subscription?.id
+        });
+
+        // 2. Get the subscription details
+        const subscription = session.subscription;
+        if (!subscription) {
+            console.error('❌ No subscription in session');
+            throw new Meteor.Error('invalid-session', 'No subscription in session');
+        }
+
+        // 3. Determine plan tier
+        let planTier = session.metadata?.planTier;
+        
+        // Fallback: Try to identify plan from Price ID if metadata is missing
+        if (!planTier && session.line_items?.data[0]) {
+            const priceId = session.line_items.data[0].price.id;
+            console.log('🔍 Looking up plan for price ID:', priceId);
+            
+            // Reverse lookup in STRIPE_PRICE_IDS
+            for (const [plan, prices] of Object.entries(STRIPE_PRICE_IDS)) {
+                if (Object.values(prices).includes(priceId)) {
+                    planTier = plan;
+                    console.log('✅ Found plan match:', plan);
+                    break;
+                }
+            }
+            
+            if (!planTier) {
+                console.warn('⚠️ Could not identify plan from price ID, defaulting to enterprise');
+                planTier = 'enterprise';
+            }
+        }
+
+        console.log('🎯 Detected Plan Tier:', planTier);
+
+        // 4. Update the local database
+        const storeId = session.metadata?.storeId || (await Subscriptions.findOneAsync({ userId }))?.storeId;
+        
+        if (storeId) {
+            const updateResult = await Subscriptions.updateAsync({ storeId }, {
+                $set: {
+                    stripeCustomerId: session.customer,
+                    stripeSubscriptionId: subscription.id,
+                    planTier: planTier || 'free',
+                    limits: SUBSCRIPTION_PLANS[planTier || 'free'].limits,
+                    status: subscription.status,
+                    currentPeriodStart: new Date(subscription.current_period_start * 1000),
+                    currentPeriodEnd: new Date(subscription.current_period_end * 1000),
+                    billingCycle: session.metadata?.billingCycle || 'monthly',
+                    cancelAtPeriodEnd: subscription.cancel_at_period_end,
+                    updatedAt: new Date()
+                }
+            });
+            console.log(`✅ Subscription synced for store ${storeId}. Update result:`, updateResult);
+            return true;
+        } else {
+            console.error('❌ Could not find storeId to update subscription');
+        }
+        
+        return false;
     },
 
     /**

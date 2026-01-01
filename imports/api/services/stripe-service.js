@@ -22,16 +22,16 @@ if (Meteor.isServer) {
 // These are created in Stripe Dashboard and mapped here
 export const STRIPE_PRICE_IDS = {
     starter: {
-        monthly: 'price_1SkT3vPpNQufD1wY0mzw4zDH',
-        yearly: 'price_1SkT3wPpNQufD1wYsUd2f2ct'
+        monthly: 'price_1SkUtCRvb20brhloaGaFE2Ak',
+        yearly: 'price_1SkUtDRvb20brhlog5kA8QIu'
     },
     pro: {
-        monthly: 'price_1SkT3wPpNQufD1wYO7LsMxtb',
-        yearly: 'price_1SkT3xPpNQufD1wYT0hguZo2'
+        monthly: 'price_1SkUtERvb20brhlovRjbUR8Q',
+        yearly: 'price_1SkUtERvb20brhloMdx9fg41'
     },
     enterprise: {
-        monthly: 'price_1SkT3yPpNQufD1wY246qMSE5',
-        yearly: 'price_1SkT3yPpNQufD1wYvMhjJiFH'
+        monthly: 'price_1SkUtFRvb20brhlo5nvvbkh5',
+        yearly: 'price_1SkUtFRvb20brhloD6pfb4w5'
     }
 };
 

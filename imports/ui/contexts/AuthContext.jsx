@@ -18,21 +18,28 @@ export const AuthProvider = ({ children }) => {
 
   // Use Meteor's reactive data source to track user state
   const { user, isLoggingIn } = useTracker(() => {
-    const currentUser = Meteor.user();
-    const loggingIn = Meteor.loggingIn();
-    
     return {
-      user: currentUser,
-      isLoggingIn: loggingIn
+      user: Meteor.user(),
+      isLoggingIn: Meteor.loggingIn(),
     };
   }, []);
 
   useEffect(() => {
-    // Set loading to false once Meteor finishes checking login state
-    if (!isLoggingIn) {
-      setLoading(false);
-    }
-  }, [isLoggingIn]);
+    // Only set loading to false when we are sure the login process is done.
+    // However, on first load, isLoggingIn might be false for a split second.
+    // We should trust the tracker's return. 
+    // If user is present, we are loaded.
+    // If isLoggingIn is true, we are loading.
+    // If neither, and we've had a tick, we are likely not logged in.
+    
+    // Simplest fix: The useTracker hook will run immediately.
+    // If we are logging in, we show loading.
+    // If we have a user, we are authenticated.
+    // If we don't have a user and aren't logging in, we are unauthenticated.
+    
+    // We sync the local loading state with isLoggingIn
+    setLoading(isLoggingIn);
+  }, [isLoggingIn, user]);
 
   const login = async (email, password) => {
     return new Promise((resolve, reject) => {

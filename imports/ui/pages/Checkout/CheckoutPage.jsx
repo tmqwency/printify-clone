@@ -214,37 +214,65 @@ export const CheckoutSuccessPage = () => {
     const navigate = useNavigate();
     const [searchParams] = useSearchParams();
     const sessionId = searchParams.get('session_id');
+    const [syncing, setSyncing] = useState(true);
+
+    React.useEffect(() => {
+        const syncSubscription = async () => {
+            if (!sessionId) return;
+            try {
+                await Meteor.callAsync('subscriptions.syncFromSession', sessionId);
+                toast.success('Subscription activated successfully!');
+            } catch (error) {
+                console.error('Sync error:', error);
+                // Even if sync fails, the webhook might have worked, so just warn
+                toast.warning('Subscription updated in background.');
+            } finally {
+                setSyncing(false);
+            }
+        };
+
+        syncSubscription();
+    }, [sessionId]);
 
     return (
         <div className="min-h-screen bg-gray-50 flex items-center justify-center px-4">
             <div className="max-w-md w-full bg-white rounded-lg shadow-lg p-8 text-center">
-                <div className="mb-6">
-                    <svg
-                        className="mx-auto h-16 w-16 text-green-500"
-                        fill="none"
-                        stroke="currentColor"
-                        viewBox="0 0 24 24"
-                    >
-                        <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={2}
-                            d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
-                        />
-                    </svg>
-                </div>
-                <h1 className="text-3xl font-bold text-gray-900 mb-4">
-                    Payment Successful!
-                </h1>
-                <p className="text-gray-600 mb-8">
-                    Your subscription has been activated. You can now enjoy all the features of your plan.
-                </p>
-                <button
-                    onClick={() => navigate('/dashboard')}
-                    className="w-full bg-blue-600 text-white py-3 px-6 rounded-lg font-semibold hover:bg-blue-700 transition"
-                >
-                    Go to Dashboard
-                </button>
+                {syncing ? (
+                    <div className="py-12">
+                         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-primary-500 mx-auto mb-4"></div>
+                         <p className="text-gray-600">Finalizing your subscription...</p>
+                    </div>
+                ) : (
+                    <>
+                        <div className="mb-6">
+                            <svg
+                                className="mx-auto h-16 w-16 text-green-500"
+                                fill="none"
+                                stroke="currentColor"
+                                viewBox="0 0 24 24"
+                            >
+                                <path
+                                    strokeLinecap="round"
+                                    strokeLinejoin="round"
+                                    strokeWidth={2}
+                                    d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"
+                                />
+                            </svg>
+                        </div>
+                        <h1 className="text-3xl font-bold text-gray-900 mb-4">
+                            Payment Successful!
+                        </h1>
+                        <p className="text-gray-600 mb-8">
+                            Your subscription has been activated. You can now enjoy all the features of your plan.
+                        </p>
+                        <button
+                            onClick={() => navigate('/dashboard/billing')}
+                            className="w-full bg-blue-600 text-white py-3 px-6 rounded-lg font-semibold hover:bg-blue-700 transition"
+                        >
+                            Go to Billing
+                        </button>
+                    </>
+                )}
             </div>
         </div>
     );

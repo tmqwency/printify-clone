@@ -25,6 +25,8 @@ import { UserProducts } from "../imports/api/collections/UserProducts";
 import { Designs } from "../imports/api/collections/designs";
 import { Orders } from "../imports/api/collections/orders";
 import { Providers } from "../imports/api/collections/Providers";
+import { Subscriptions } from "../imports/api/collections/subscriptions";
+import { Stores } from "../imports/api/collections/stores";
 
 // Publish collections
 Meteor.publish("products.all", function () {
@@ -86,3 +88,17 @@ Meteor.publish("providers.all", async function () {
 
 // Import user publications
 import "./publications/users";
+
+Meteor.publish("subscriptions.mine", function () {
+  if (!this.userId) {
+    return this.ready();
+  }
+  return Subscriptions.find({ userId: this.userId });
+});
+
+Meteor.publish("stores.mine", function () {
+  if (!this.userId) {
+    return this.ready();
+  }
+  return Stores.find({ userId: this.userId });
+});
