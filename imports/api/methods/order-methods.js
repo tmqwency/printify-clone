@@ -108,9 +108,11 @@ Meteor.methods({
         let assignedProviderId = null;
 
         if (bestProvider) {
-            providerCost = calculateProviderCost(bestProvider, order);
+            providerCost = calculateProviderCost(bestProvider, order); // local var name kept for logic
             assignedProviderId = bestProvider._id;
         }
+
+        const profit = total - providerCost - shippingCost;
 
         await Orders.updateAsync(orderId, {
             $set: {
@@ -118,7 +120,8 @@ Meteor.methods({
                 shippingCost,
                 total,
                 assignedProviderId,
-                providerCost,
+                productionCost: providerCost, // Map to schema field
+                profit, // Save profit
                 assignmentMethod: 'auto',
                 updatedAt: new Date()
             }
@@ -285,7 +288,13 @@ Meteor.methods({
             throw new Meteor.Error('not-found', 'Order not found');
         }
 
-        await verifyStoreOwnership(userId, order.storeId);
+        // Check if user is admin
+        const currentUser = await Meteor.users.findOneAsync(userId);
+        const isAdmin = currentUser?.profile?.isAdmin;
+
+        if (!isAdmin) {
+             await verifyStoreOwnership(userId, order.storeId);
+        }
 
         // Update order
         await Orders.updateAsync(orderId, {
@@ -548,11 +557,13 @@ Meteor.methods({
         }
 
         const providerCost = calculateProviderCost(provider, order);
+        const profit = order.total - providerCost - (order.shippingCost || 0);
 
         await Orders.updateAsync(orderId, {
             $set: {
                 assignedProviderId: providerId,
-                providerCost,
+                productionCost: providerCost,
+                profit,
                 assignmentMethod: 'manual',
                 updatedAt: new Date()
             }
