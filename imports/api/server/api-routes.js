@@ -288,6 +288,27 @@ WebApp.connectHandlers.use('/api/v1/orders', async (req, res, next) => {
                 });
             }
 
+            // Notify user
+            const { Notifications } = await import('/imports/api/collections/notifications');
+            await Notifications.insertAsync({
+                userId: store.userId,
+                type: 'order_created',
+                title: 'New Order Received',
+                message: `Order #${orderData.external_order_id} from API has been created.`,
+                data: { orderId, externalOrderId: orderData.external_order_id },
+                read: false,
+                createdAt: new Date()
+            });
+
+            // Increment Order Usage (in addition to API call usage)
+            const { Subscriptions } = await import('../collections/subscriptions');
+            const subscription = await Subscriptions.findOneAsync({ userId: store.userId }, { sort: { updatedAt: -1 } });
+            if (subscription) {
+                await Subscriptions.updateAsync(subscription._id, {
+                    $inc: { 'usage.ordersThisMonth': 1 }
+                });
+            }
+
             res.statusCode = 201;
             res.end(JSON.stringify({
                 success: true,

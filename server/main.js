@@ -103,3 +103,5 @@ Meteor.publish("stores.mine", function () {
   }
   return Stores.find({ userId: this.userId });
 });
+import '/imports/api/methods/notification-methods';
+import '/imports/api/server/publications/notifications';

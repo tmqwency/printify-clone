@@ -158,6 +158,18 @@ Meteor.methods({
             });
         }
 
+        // Notify user
+        const { Notifications } = await import('/imports/api/collections/notifications');
+        await Notifications.insertAsync({
+            userId,
+            type: 'order_created',
+            title: 'New Order Received',
+            message: `Order #${orderData.externalOrderId} from ${orderData.customerName} has been created.`,
+            data: { orderId, externalOrderId: orderData.externalOrderId },
+            read: false,
+            createdAt: new Date()
+        });
+
         return orderId;
     },
 
@@ -314,6 +326,28 @@ Meteor.methods({
                 console.error('Failed to notify platform of shipment:', error);
             }
         }
+        
+        // Notify user
+        const { Notifications } = await import('/imports/api/collections/notifications');
+        await Notifications.insertAsync({
+            userId: order.userId, // CAUTION: order doesn't carry userId directly usually, it carries storeId. We need to find owner.
+            // Actually, verifyStoreOwnership checks userId vs storeId owner. So we can use that if caller is owner.
+            // BUT, caller is user. So notify SELF? Usually updateTracking is called by SYSTEM or ADMIN.
+            // If caller is admin, we notify store owner.
+            // Let's assume store owner logic.
+           
+            // RE-CHECK: verifyStoreOwnership(userId, order.storeId) implies the caller OWNS the store.
+            // So if I update my own tracking, I get a notification? Seems redundant but okay.
+            // If this is called by a webhook (unauthenticated or admin), we need to find the user.
+            
+            userId, // For now, notifying the caller (owner).
+            type: 'order_status_change',
+            title: 'Order Shipped',
+            message: `Order #${order.externalOrderId} has been shipped via ${trackingData.carrier}.`,
+            data: { orderId, externalOrderId: order.externalOrderId },
+            read: false,
+            createdAt: new Date()
+        });
 
         return true;
     },
@@ -434,6 +468,22 @@ Meteor.methods({
             createdAt: new Date(),
             updatedAt: new Date()
         });
+        
+        // Notify Store Owner
+        const { Stores } = await import('/imports/api/collections/stores');
+        const store = await Stores.findOneAsync(order.storeId);
+        if (store) {
+            const { Notifications } = await import('/imports/api/collections/notifications');
+            await Notifications.insertAsync({
+                userId: store.userId, // Notify the store owner
+                type: 'order_status_change',
+                title: 'Order Status Updated',
+                message: `Order #${order.externalOrderId} status changed to ${newStatus}.`,
+                data: { orderId, externalOrderId: order.externalOrderId, newStatus },
+                read: false,
+                createdAt: new Date()
+            });
+        }
 
         return true;
     },

@@ -7,7 +7,6 @@ import { toast } from "react-toastify";
 import {
   FaHome,
   FaBox,
-  FaPalette,
   FaShoppingBag,
   FaStore,
   FaCreditCard,
@@ -21,6 +20,7 @@ import {
   FaTruck,
 } from "react-icons/fa";
 import { useState } from "react";
+import NotificationCenter from '../../components/NotificationCenter';
 
 const DashboardLayout = () => {
   const { user, logout, isLoggingIn, loading } = useAuth();
@@ -111,6 +111,7 @@ const DashboardLayout = () => {
 
               {/* Right side */}
               <div className="flex items-center gap-4">
+                <NotificationCenter />
                 <span className="text-sm text-gray-700">
                   {user?.emails?.[0]?.address || user?.profile?.name || "User"}
                 </span>

@@ -68,6 +68,45 @@ Meteor.methods({
             }
         });
 
+        // 5. Check Thresholds (75%) and Notify
+        const { limits } = subscription;
+        const metrics = [
+            { id: 'orders', name: 'Orders', val: ordersCount, max: limits.maxOrders },
+            { id: 'products', name: 'Products', val: productsCount, max: limits.maxProducts },
+            { id: 'storage', name: 'Storage', val: storageUsedMB, max: limits.maxStorageMB }
+        ];
+
+        for (const m of metrics) {
+             if (m.max !== -1 && (m.val / m.max) >= 0.75) {
+                 // Check if we already notified recently? For now, we simple send.
+                 // Ideally we'd store a flag 'warningSent: true' in usage and reset on billing cycle.
+                 // To prevent spam, we just rely on the user seeing it.
+                 // A better approach: check if we already have a notification for this month/metric.
+                 
+                 const { Notifications } = await import('/imports/api/collections/notifications');
+                 
+                 // Anti-spam: check if unread notification of this type exists
+                 const existing = await Notifications.findOneAsync({
+                     userId,
+                     type: 'usage_limit_warning',
+                     'data.metric': m.id,
+                     read: false
+                 });
+
+                 if (!existing) {
+                    await Notifications.insertAsync({
+                        userId,
+                        type: 'usage_limit_warning',
+                        title: 'Usage Alert',
+                        message: `Your ${m.name} usage is at ${Math.round((m.val / m.max) * 100)}% of your plan limit.`,
+                        data: { metric: m.id, current: m.val, max: m.max },
+                        read: false,
+                        createdAt: new Date()
+                    });
+                 }
+             }
+        }
+
         return {
             products: productsCount,
             orders: ordersCount,
