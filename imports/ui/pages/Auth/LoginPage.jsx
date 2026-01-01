@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { Meteor } from "meteor/meteor";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "../../contexts/AuthContext";
 import { toast } from "react-toastify";
@@ -16,9 +17,16 @@ const LoginPage = () => {
     setLoading(true);
 
     try {
+
       await login(email, password);
       toast.success("Welcome back!");
-      navigate("/dashboard");
+      
+      const user = Meteor.user();
+      if (user?.profile?.isAdmin) {
+        navigate("/dashboard/admin");
+      } else {
+        navigate("/dashboard");
+      }
     } catch (error) {
       toast.error(
         error.reason || "Login failed. Please check your credentials."
