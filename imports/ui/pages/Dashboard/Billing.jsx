@@ -156,7 +156,14 @@ const Billing = () => {
         return;
       }
 
-      const storeId = stores[0]._id;
+      const storeId = subscription 
+        ? subscription.storeId 
+        : (stores[0]?._id);
+
+      if (!storeId) {
+        toast.error("No store ID found.");
+        return;
+      }
 
       // If upgrading to a paid plan, redirect to Stripe Checkout
       if (selectedPlan !== 'free') {

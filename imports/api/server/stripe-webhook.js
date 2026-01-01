@@ -1,6 +1,6 @@
 import { WebApp } from 'meteor/webapp';
 import { Meteor } from 'meteor/meteor';
-import StripeService from '../services/stripe-service';
+import StripeService, { STRIPE_PRICE_IDS } from '../services/stripe-service';
 import { Subscriptions } from '../collections/subscriptions';
 import { SUBSCRIPTION_PLANS } from '../methods/subscription-methods';
 
@@ -25,10 +25,18 @@ const getRawBody = (req) => {
 
 // Map Stripe plan/price to our plan tiers
 const getPlanTierFromPrice = (priceId) => {
-    // This is a simple mapping - in production you'd want a more robust solution
+    // Reverse lookup in STRIPE_PRICE_IDS
+    for (const [plan, prices] of Object.entries(STRIPE_PRICE_IDS)) {
+        if (Object.values(prices).includes(priceId)) {
+            return plan;
+        }
+    }
+    
+    // Fallback logic
     if (priceId.includes('starter')) return 'starter';
     if (priceId.includes('pro')) return 'pro';
     if (priceId.includes('enterprise')) return 'enterprise';
+    
     return 'free';
 };
 

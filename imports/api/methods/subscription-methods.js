@@ -1,6 +1,11 @@
 import { Meteor } from 'meteor/meteor';
 import { check, Match } from 'meteor/check';
-const SUBSCRIPTION_PLANS = {
+import { Subscriptions } from '../collections/subscriptions';
+import { Stores } from '../collections/stores';
+import { AuditLogs } from '../collections/audit-logs';
+import { StripeService, STRIPE_PRICE_IDS } from '../services/stripe-service';
+import { requireAuth, verifyStoreOwnership } from '../users/users';
+export const SUBSCRIPTION_PLANS = {
     free: {
         name: 'Free',
         price: 0,

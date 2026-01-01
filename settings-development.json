@@ -18,7 +18,7 @@
     "stripe": {
       "publishableKey": "pk_test_51SkUp1Rvb20brhlohebD8ay7PRn9w9JX5kE1WpkdF4qaotayEkYP97N4ZDxYjubxZD1jJyrU4RpG8nfC5dQDI4cM00izTQSlty",
       "secretKey": "sk_test_51SkUp1Rvb20brhlozU7nGsxwBUWDrOk4BehJWXNrobBHqV0pwvpfBznoWxid7rbXVtAk2P43Hrkzo9tO93MmpQzm00tkXBzKZr",
-      "webhookSecret": "whsec_..."
+      "webhookSecret": "whsec_3d959bd304192798fe11cda9b46608282968af5fb434aa491ad3a255c743ddfa"
     },
     "storage": {
       "type": "local",
