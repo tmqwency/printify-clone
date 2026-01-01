@@ -5,9 +5,12 @@ import { FaBell } from 'react-icons/fa';
 import { Notifications } from '/imports/api/collections/notifications';
 import { toast } from 'react-toastify';
 
+import { useNavigate } from 'react-router-dom';
+
 const NotificationCenter = () => {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef(null);
+  const navigate = useNavigate();
 
   // Close dropdown when clicking outside
   useEffect(() => {
@@ -25,7 +28,7 @@ const NotificationCenter = () => {
     
     return {
       loading: !handle.ready(),
-      notifications: Notifications.find({}, { sort: { createdAt: -1 } }).fetch(),
+      notifications: Notifications.find({}, { sort: { createdAt: -1 }, limit: 5 }).fetch(), // Limit to 5 for dropdown
       unreadCount: Notifications.find({ read: false }).count()
     };
   }, []);
@@ -40,6 +43,11 @@ const NotificationCenter = () => {
             if (err) toast.error('Failed to mark all as read');
         });
     }
+  };
+
+  const goToNotifications = () => {
+      setIsOpen(false);
+      navigate('/dashboard/notifications');
   };
 
   const getIconColor = (type) => {
@@ -119,7 +127,10 @@ const NotificationCenter = () => {
                 )}
             </div>
             <div className="p-2 border-t border-gray-100 text-center bg-gray-50">
-                <button className="text-xs text-gray-500 hover:text-gray-700 font-medium">
+                <button 
+                    onClick={goToNotifications}
+                    className="text-xs text-primary-600 hover:text-primary-700 font-medium w-full py-1"
+                >
                     View All
                 </button>
             </div>

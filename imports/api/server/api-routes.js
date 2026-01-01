@@ -300,14 +300,9 @@ WebApp.connectHandlers.use('/api/v1/orders', async (req, res, next) => {
                 createdAt: new Date()
             });
 
-            // Increment Order Usage (in addition to API call usage)
-            const { Subscriptions } = await import('../collections/subscriptions');
-            const subscription = await Subscriptions.findOneAsync({ userId: store.userId }, { sort: { updatedAt: -1 } });
-            if (subscription) {
-                await Subscriptions.updateAsync(subscription._id, {
-                    $inc: { 'usage.ordersThisMonth': 1 }
-                });
-            }
+            // Sync usage (Orders)
+            const { syncSubscriptionUsage } = await import('../methods/usage-methods');
+            await syncSubscriptionUsage(store.userId);
 
             res.statusCode = 201;
             res.end(JSON.stringify({

@@ -156,6 +156,10 @@ Meteor.methods({
             await Subscriptions.updateAsync(subscription._id, {
                 $inc: { 'usage.ordersThisMonth': 1 }
             });
+
+            // Check thresholds
+            const { checkAndNotifyThresholds } = await import('./usage-methods');
+            await checkAndNotifyThresholds(userId);
         }
 
         // Notify user

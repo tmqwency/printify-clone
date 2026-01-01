@@ -28,6 +28,7 @@ import Designs from "./pages/Dashboard/Designs";
 import Orders from "./pages/Dashboard/Orders";
 import Stores from "./pages/Dashboard/Stores";
 import Billing from "./pages/Dashboard/Billing";
+import NotificationsPage from "./pages/Dashboard/Notifications";
 import Settings from "./pages/Dashboard/Settings";
 import AdminProducts from "./pages/Dashboard/AdminProducts";
 import AdminUsers from "./pages/Dashboard/AdminUsers";
@@ -215,6 +216,7 @@ export const App = () => {
               <Route path="orders" element={<Orders />} />
               <Route path="stores" element={<Stores />} />
               <Route path="billing" element={<Billing />} />
+              <Route path="notifications" element={<NotificationsPage />} />
               <Route path="settings" element={<Settings />} />
               {/* Admin Routes */}
               <Route path="admin" element={<AdminDashboard />} />

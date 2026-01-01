@@ -47,12 +47,9 @@ Meteor.methods({
             updatedAt: new Date()
         });
 
-        // Increment storage usage
-        if (subscription) {
-            await Subscriptions.updateAsync(subscription._id, {
-                $inc: { 'usage.storageUsedMB': fileSizeMB }
-            });
-        }
+        // Increment storage usage (Sync with actual data)
+        const { syncSubscriptionUsage } = await import('./usage-methods');
+        await syncSubscriptionUsage(userId);
 
         // Log action
         await AuditLogs.insertAsync({
@@ -220,12 +217,9 @@ Meteor.methods({
             updatedAt: new Date()
         });
 
-        // Increment storage usage
-        if (subscription) {
-            await Subscriptions.updateAsync(subscription._id, {
-                $inc: { 'usage.storageUsedMB': fileSizeMB }
-            });
-        }
+        // Increment storage usage (Sync with actual data)
+        const { syncSubscriptionUsage } = await import('./usage-methods');
+        await syncSubscriptionUsage(userId);
 
         return designId;
     },
@@ -255,23 +249,12 @@ Meteor.methods({
             throw new Meteor.Error('not-found', 'Design not found');
         }
 
-        // Decrement storage usage
-        const fileSizeMB = (design.fileSize || 0) / (1024 * 1024);
-        
-        const { Subscriptions } = await import('../../api/collections/subscriptions');
-        const subscription = await Subscriptions.findOneAsync({ userId }, { sort: { updatedAt: -1 } });
-
-        if (subscription && fileSizeMB > 0) {
-            // Ensure we don't go below 0
-            const currentUsage = subscription.usage.storageUsedMB || 0;
-            const newUsage = Math.max(0, currentUsage - fileSizeMB);
-            
-            await Subscriptions.updateAsync(subscription._id, {
-                $set: { 'usage.storageUsedMB': newUsage }
-            });
-        }
-
         await Designs.removeAsync(designId);
+
+        // Sync storage usage
+        const { syncSubscriptionUsage } = await import('./usage-methods');
+        await syncSubscriptionUsage(userId);
+
         return true;
     }
 });

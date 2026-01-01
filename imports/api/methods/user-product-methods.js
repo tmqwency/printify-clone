@@ -60,15 +60,9 @@ Meteor.methods({
             storageSize: totalSizeByte // Store size for future reference
         });
 
-        // Increment usage
-        if (subscription) {
-            await Subscriptions.updateAsync(subscription._id, {
-                $inc: { 
-                    'usage.productsCreated': 1,
-                    'usage.storageUsedMB': totalSizeMB
-                }
-            });
-        }
+        // Increment usage (Sync with actual data)
+        const { syncSubscriptionUsage } = await import('./usage-methods');
+        await syncSubscriptionUsage(userId);
 
         return userProductId;
     },
@@ -146,11 +140,10 @@ Meteor.methods({
             }
         });
 
-        // Update usage if size changed
+        // Update usage if size changed (Sync with actual data)
         if (subscription && Math.abs(sizeDiffMB) > 0) {
-             await Subscriptions.updateAsync(subscription._id, {
-                $inc: { 'usage.storageUsedMB': sizeDiffMB }
-            });
+            const { syncSubscriptionUsage } = await import('./usage-methods');
+            await syncSubscriptionUsage(userId);
         }
 
         return true;
@@ -176,30 +169,9 @@ Meteor.methods({
         // Delete product
         await UserProducts.removeAsync(productId);
 
-        // Decrement usage (Products + Storage)
-        const { Subscriptions } = await import('../../api/collections/subscriptions');
-        const subscription = await Subscriptions.findOneAsync({ userId }, { sort: { updatedAt: -1 } });
-
-        if (subscription) {
-            const updates = {};
-            
-            if (subscription.usage.productsCreated > 0) {
-                updates['usage.productsCreated'] = -1;
-            }
-
-            // Decrement storage if product had size tracked
-            if (product.storageSize) {
-                const sizeMB = product.storageSize / (1024 * 1024);
-                // Ensure we don't go below 0 (though mongo handles this, logic matters)
-                updates['usage.storageUsedMB'] = -sizeMB;
-            }
-
-            if (Object.keys(updates).length > 0) {
-                 await Subscriptions.updateAsync(subscription._id, {
-                    $inc: updates
-                });
-            }
-        }
+        // Sync usage (Products + Storage)
+        const { syncSubscriptionUsage } = await import('./usage-methods');
+        await syncSubscriptionUsage(userId);
 
         return { success: true };
     },
@@ -221,6 +193,26 @@ Meteor.methods({
             throw new Meteor.Error('not-authorized', 'You can only duplicate your own products');
         }
 
+        // Check subscription limits
+        const { Subscriptions } = await import('../../api/collections/subscriptions');
+        const subscription = await Subscriptions.findOneAsync({ userId }, { sort: { updatedAt: -1 } });
+
+        const storageSizeMB = (product.storageSize || 0) / (1024 * 1024);
+
+        if (subscription) {
+            const { limits, usage } = subscription;
+
+            // Check Product Limit
+            if (limits.maxProducts !== -1 && usage.productsCreated >= limits.maxProducts) {
+                throw new Meteor.Error('limit-reached', 'Product limit reached. Please upgrade your plan.');
+            }
+
+            // Check Storage Limit
+            if (limits.maxStorageMB !== -1 && (usage.storageUsedMB + storageSizeMB) > limits.maxStorageMB) {
+                 throw new Meteor.Error('limit-reached', 'Storage limit reached. Please upgrade your plan.');
+            }
+        }
+
         // Create duplicate
         const { _id, createdAt, updatedAt, sales, ...productData } = product;
         const newProductId = await UserProducts.insertAsync({
@@ -231,6 +223,10 @@ Meteor.methods({
             createdAt: new Date(),
             updatedAt: new Date()
         });
+
+        // Increment usage (Sync with actual data)
+        const { syncSubscriptionUsage } = await import('./usage-methods');
+        await syncSubscriptionUsage(userId);
 
         return newProductId;
     },

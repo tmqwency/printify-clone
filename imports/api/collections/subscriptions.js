@@ -58,6 +58,26 @@ const SubscriptionSchema = new SimpleSchema({
         defaultValue: 0,
         min: 0
     },
+    'usage.warningsSent': {
+        type: Object,
+        optional: true,
+        defaultValue: {}
+    },
+    'usage.warningsSent.orders': {
+        type: Boolean,
+        optional: true,
+        defaultValue: false
+    },
+    'usage.warningsSent.products': {
+        type: Boolean,
+        optional: true,
+        defaultValue: false
+    },
+    'usage.warningsSent.storage': {
+        type: Boolean,
+        optional: true,
+        defaultValue: false
+    },
 
     // Plan Limits
     limits: {

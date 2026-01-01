@@ -80,6 +80,16 @@ Meteor.methods({
     },
     
     /**
+     * Delete a single notification
+     */
+    async 'notifications.delete'(notificationId) {
+        check(notificationId, String);
+        const userId = requireAuth.call(this);
+
+        await Notifications.removeAsync({ _id: notificationId, userId });
+    },
+
+    /**
      * Clear all notifications
      */
     async 'notifications.clear'() {
