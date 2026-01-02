@@ -61,6 +61,14 @@ const Stores = () => {
 
   useEffect(() => {
     fetchStores();
+    
+    // Check for OAuth success
+    const urlParams = new URLSearchParams(window.location.search);
+    if (urlParams.get('success') === 'true') {
+      toast.success('Shopify store connected successfully!');
+      // Clean up URL
+      window.history.replaceState({}, '', '/dashboard/stores');
+    }
   }, []);
 
   const fetchStores = async () => {
@@ -98,6 +106,46 @@ const Stores = () => {
 
   const handleCreateStore = async (formData) => {
     try {
+      // For Shopify, initiate OAuth flow
+      if (formData.platform === 'shopify') {
+        const shop = formData.platformStoreName;
+        const userId = Meteor.userId();
+        
+        if (!userId) {
+          toast.error('You must be logged in to connect a store');
+          return;
+        }
+        
+        if (!shop) {
+          toast.error('Please enter your Shopify store URL');
+          return;
+        }
+        
+        // Normalize shop domain
+        const shopDomain = shop.includes('.myshopify.com') ? shop : `${shop}.myshopify.com`;
+        
+        console.log('Redirecting to Shopify OAuth for:', shopDomain);
+        
+        // Build Shopify authorization URL directly
+        const clientId = '3552046940d16e8a0115d8fc3992bf03'; // From settings
+        const scopes = 'read_products,write_products,read_orders,write_orders,read_fulfillments,write_fulfillments';
+        const redirectUri = `${window.location.origin}/api/oauth/shopify/callback`;
+        const state = `${userId}_${Date.now()}`; // Include userId in state
+        
+        const authUrl = `https://${shopDomain}/admin/oauth/authorize?` +
+          `client_id=${clientId}&` +
+          `scope=${scopes}&` +
+          `redirect_uri=${encodeURIComponent(redirectUri)}&` +
+          `state=${state}`;
+        
+        console.log('Authorization URL:', authUrl);
+        
+        // Redirect to Shopify authorization page
+        window.location.href = authUrl;
+        return;
+      }
+
+      // For other platforms, create store directly
       await new Promise((resolve, reject) => {
         Meteor.call("stores.create", formData, (error, result) => {
           if (error) reject(error);

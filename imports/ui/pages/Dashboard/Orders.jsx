@@ -300,10 +300,10 @@ const Orders = () => {
                       </td>
                       <td className="px-6 py-4">
                         <div className="text-sm text-gray-900">
-                          {order.customerName}
+                          {order.customerName || order.customer?.name || "Unknown Customer"}
                         </div>
                         <div className="text-sm text-gray-500">
-                          {order.customerEmail}
+                          {order.customerEmail || order.customer?.email || "No Email"}
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
@@ -388,10 +388,10 @@ const Orders = () => {
                   Customer
                 </h3>
                 <p className="text-gray-900">
-                  {selectedOrder.order?.customerName}
+                  {selectedOrder.order?.customerName || selectedOrder.order?.customer?.name || "Unknown"}
                 </p>
                 <p className="text-gray-600">
-                  {selectedOrder.order?.customerEmail}
+                  {selectedOrder.order?.customerEmail || selectedOrder.order?.customer?.email || "No Email"}
                 </p>
               </div>
 

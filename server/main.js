@@ -3,7 +3,6 @@ import { Meteor } from "meteor/meteor";
 // Import admin seed
 import "./seed-admin";
 
-// Import methods
 import "../imports/api/methods/product-methods";
 import "../imports/api/methods/design-methods";
 import "../imports/api/methods/user-product-methods";
@@ -14,14 +13,19 @@ import "../imports/api/methods/admin-methods";
 import "../imports/api/methods/auth-methods";
 import "../imports/api/methods/stock-image-methods";
 import "../imports/api/methods/provider-methods";
+import "../imports/api/methods/product-sync-methods"; // Shopify product sync
+import "../imports/api/methods/shopify-webhook-methods"; // Shopify webhooks
 import "./reset-products"; // Admin method to reset products
 import "../imports/api/methods/stripe-setup-methods"; // Stripe setup methods
 import "../imports/api/methods/usage-methods";
+
 
 // Import collections
 import { Products } from "../imports/api/collections/products";
 import "../imports/api/server/api-routes"; // Register REST API routes
 import "../imports/api/server/stripe-webhook"; // Register Stripe webhook
+import "./routes/shopify-oauth-routes"; // Register Shopify OAuth routes
+import "./routes/shopify-webhook-routes"; // Register Shopify webhook routes
 import { UserProducts } from "../imports/api/collections/UserProducts";
 import { Designs } from "../imports/api/collections/designs";
 import { Orders } from "../imports/api/collections/orders";

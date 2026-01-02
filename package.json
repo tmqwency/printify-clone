@@ -17,6 +17,7 @@
   "dependencies": {
     "@babel/runtime": "^7.23.5",
     "@headlessui/react": "^1.7.17",
+    "@shopify/shopify-api": "^12.2.0",
     "@swc/helpers": "^0.5.17",
     "axios": "^1.6.2",
     "bcrypt": "^5.1.1",

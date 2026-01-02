@@ -16,6 +16,7 @@ import StockImagesPanel from "./components/StockImagesPanel";
 import FontSelector from "./components/FontSelector";
 import ShapesPanel from "./components/ShapesPanel";
 import CollapsibleSidebar from "./components/CollapsibleSidebar";
+import MockupSidebar from "./components/MockupSidebar";
 import {
   DesignRect,
   DesignCircle,
@@ -35,6 +36,7 @@ import {
 } from "react-icons/fa";
 import { toast } from "react-toastify";
 import { Products } from "../../../api/collections/products";
+import { applyPerspectiveTransformSmooth, MOCKUP_PERSPECTIVES } from "../../utils/perspectiveTransform";
 
 // Konva Image Component
 const DesignImage = ({ image, isSelected, onSelect, onChange }) => {
@@ -166,11 +168,14 @@ const Designs = () => {
   const [isLoadingProduct, setIsLoadingProduct] = useState(false);
   const [canvasElements, setCanvasElements] = useState([]);
   const [selectedId, setSelectedId] = useState(null);
+  const [activeTab, setActiveTab] = useState('design');
   const [zoom, setZoom] = useState(1); // Default 100% zoom
   const [activeLibraryTab, setActiveLibraryTab] = useState("uploads"); // 'uploads' or 'stock'
   const [productName, setProductName] = useState("");
   const [textInput, setTextInput] = useState("");
   const [textColor, setTextColor] = useState("#000000");
+  const [previewImages, setPreviewImages] = useState({}); // Sidebar previews
+  const [activeMockupView, setActiveMockupView] = useState('front');
   const [fontSize, setFontSize] = useState(24);
   
   // Enhanced text formatting states
@@ -289,6 +294,8 @@ const Designs = () => {
       "t-shirt": {
         front: "/images/mockups/tshirt-template.png",
         back: "/images/mockups/tshirt-back-template.png",
+        folded: "/images/mockups/tshirt-folded-template.png",
+        hanging: "/images/mockups/tshirt-hanging-template.png",
       },
       hoodie: {
         front: "/images/mockups/hoodie-template.png",
@@ -674,7 +681,230 @@ const Designs = () => {
       } catch (error) {
         console.error(`Error generating preview for ${printArea.name}:`, error);
       }
+
     }
+
+    // MOCKUP CONFIGURATION - Coordinates for extra views per product type
+    // Configure where designs should appear on each mockup image
+    const mockupConfigs = {
+        't-shirt': [
+            { 
+                name: 'folded', 
+                source: 'front',
+                image: '/images/mockups/tshirt-folded-template.png',
+                usePerspective: true,
+                crop: { x: 0, y: 0, width: 500, height: 500 }, // Capture top 500px (standard placement)
+                perspective: {
+                    // Adjusted for flat placement
+                    topLeft: { x: 420, y: 380 },
+                    topRight: { x: 820, y: 380 },
+                    bottomRight: { x: 860, y: 780 },
+                    bottomLeft: { x: 380, y: 780 }
+                }
+            },
+            { 
+                name: 'hanging', 
+                source: 'front',
+                image: '/images/mockups/tshirt-hanging-template.png',
+                x: 430, y: 380, width: 450, height: 540
+            }
+        ],
+        'hoodie': [
+            { 
+                name: 'folded', 
+                source: 'front',
+                image: '/images/mockups/hoodie-folded-template.png',
+                usePerspective: true,
+                crop: { x: 0, y: 0, width: 450, height: 450 }, // Capture top 450px (standard placement)
+                perspective: {
+                    // Adjusted for flat placement
+                    topLeft: { x: 420, y: 380 },
+                    topRight: { x: 820, y: 380 },
+                    bottomRight: { x: 860, y: 780 },
+                    bottomLeft: { x: 380, y: 780 }
+                }
+            },
+            { 
+                name: 'hanging', 
+                source: 'front',
+                image: '/images/mockups/hoodie-hanging-template.png',
+                x: 430, y: 380, width: 450, height: 540
+            }
+        ],
+        'mug': [
+            { 
+                name: 'angled', 
+                source: 'all-over',
+                image: '/images/mockups/mug-angled-template.png',
+                x: 300, y: 400, width: 600, height: 400
+            }
+        ],
+        'phone-case': [
+            { 
+                name: 'lifestyle', 
+                source: 'front',
+                image: '/images/mockups/phone-case-lifestyle-template.png',
+                x: 450, y: 350, width: 300, height: 600
+            }
+        ],
+        'poster': [
+            // Posters typically only have one main view
+        ]
+    };
+
+    // Get extra views for current product type
+    const productType = selectedProduct.type || 't-shirt';
+    const extraViews = mockupConfigs[productType] || [];
+
+    for (const view of extraViews) {
+        // Find the source design elements (e.g. Front)
+        const sourcePrintArea = selectedProduct.printAreas.find(pa => pa.name === view.source);
+        if (!sourcePrintArea) continue;
+        const sourceAreaIndex = selectedProduct.printAreas.indexOf(sourcePrintArea);
+
+        const elements = sourceAreaIndex === currentPrintAreaIndex ? canvasElements : canvasStates[sourceAreaIndex] || [];
+        if (elements.length === 0) continue;
+
+        try {
+             const canvas = document.createElement("canvas");
+             canvas.width = 1200; 
+             canvas.height = 1200;
+             const ctx = canvas.getContext("2d");
+
+             const img = new Image();
+             img.crossOrigin = "anonymous";
+             
+             const previewDataURL = await new Promise((resolve) => {
+                 img.onload = async () => {
+                     // Draw background
+                     ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+
+                     // Draw design
+                     // We need to render the design elements to an image first
+                     // USE ACTUAL PRINT AREA DIMENSIONS to preserve relative spacing
+                     const tempStage = new window.Konva.Stage({
+                        container: document.createElement("div"),
+                        width: sourcePrintArea.width, 
+                        height: sourcePrintArea.height,
+                     });
+                     const tempLayer = new window.Konva.Layer();
+                     tempStage.add(tempLayer);
+
+                     // Add elements to temp stage (cloned/recreated)
+                     const imageLoadPromises = [];
+                     elements.forEach((el) => {
+                       if (el.type === "text") {
+                         tempLayer.add(new window.Konva.Text({
+                           x: el.x, y: el.y, text: el.text, fontSize: el.fontSize, 
+                           fill: el.fill, fontFamily: el.fontFamily, rotation: el.rotation || 0
+                         }));
+                       } else if (el.type === "image") {
+                          const p = new Promise(r => {
+                              const i = new Image();
+                              i.crossOrigin = "anonymous";
+                              i.onload = () => {
+                                  tempLayer.add(new window.Konva.Image({
+                                      x: el.x, y: el.y, image: i, width: el.width, height: el.height, rotation: el.rotation || 0
+                                  }));
+                                  r();
+                              };
+                              i.onerror = r;
+                              i.src = el.src;
+                          });
+                          imageLoadPromises.push(p);
+                       }
+                     });
+                     
+                     await Promise.all(imageLoadPromises);
+                     tempLayer.draw();
+                     
+                     // Check if this view uses perspective transformation
+                     if (view.usePerspective && view.perspective) {
+                         // Create a canvas from the temp stage
+                         const designCanvas = document.createElement('canvas');
+                         designCanvas.width = sourcePrintArea.width;
+                         designCanvas.height = sourcePrintArea.height;
+                         const designCtx = designCanvas.getContext('2d');
+                         
+                         // Draw the temp stage content to the design canvas
+                         const tempDataURL = tempStage.toDataURL({ pixelRatio: 2 });
+                         const tempImg = new Image();
+                         
+                         tempImg.onload = () => {
+                              const pr = 2; // pixelRatio
+                              
+                              if (view.crop) {
+                                  designCanvas.width = view.crop.width * pr;
+                                  designCanvas.height = view.crop.height * pr;
+                                  designCtx.drawImage(tempImg, view.crop.x * pr, view.crop.y * pr, view.crop.width * pr, view.crop.height * pr, 0, 0, designCanvas.width, designCanvas.height);
+                              } else {
+                                  designCanvas.width = tempImg.width;
+                                  designCanvas.height = tempImg.height;
+                                  designCtx.drawImage(tempImg, 0, 0);
+                              }
+                             
+                             // Apply perspective transformation
+                             const transformedCanvas = applyPerspectiveTransformSmooth(
+                                 designCanvas,
+                                 view.perspective,
+                                 canvas.width
+                             );
+                             
+                             // Composite the transformed design onto the mockup
+                             ctx.save(); ctx.globalCompositeOperation = "multiply"; ctx.drawImage(transformedCanvas, 0, 0); ctx.restore();
+                             
+                             resolve(canvas.toDataURL("image/jpeg", 0.85));
+                             tempStage.destroy();
+                         };
+                         
+                         tempImg.onerror = () => {
+                             console.error('Failed to load temp stage image');
+                             resolve(null);
+                             tempStage.destroy();
+                         };
+                         
+                         tempImg.src = tempDataURL;
+                     } else {
+                         // Standard rendering without perspective (for hanging, etc.)
+                         const designDataURL = tempStage.toDataURL({ pixelRatio: 2 });
+                         const designImg = new Image();
+                         
+                         designImg.onload = () => {
+                             // Draw the design at the specified position and size
+                             ctx.drawImage(
+                                 designImg,
+                                 view.x,
+                                 view.y,
+                                 view.width,
+                                 view.height
+                             );
+                             
+                             resolve(canvas.toDataURL("image/jpeg", 0.85));
+                             tempStage.destroy();
+                         };
+                         
+                         designImg.onerror = () => {
+                             console.error('Failed to load design image');
+                             resolve(null);
+                             tempStage.destroy();
+                         };
+                         
+                         designImg.src = designDataURL;
+                     }
+                 };
+                 img.onerror = () => resolve(null);
+                 img.src = view.image;
+             });
+
+             if (previewDataURL) {
+               previews[view.name] = previewDataURL;
+             }
+        } catch (error) {
+             console.error(`Error generating extra view ${view.name}`, error);
+        }
+    }
+                     
+
 
     return Object.keys(previews).length > 0 ? previews : null;
   };
@@ -828,6 +1058,49 @@ const Designs = () => {
     setTextInput("");
     toast.success("Text added to canvas!");
   };
+
+  // Real-time preview generation for sidebar
+  useEffect(() => {
+    let timeoutId;
+
+    const updatePreviews = async () => {
+        if (!selectedProduct) return;
+        
+        // Use the existing generateAllPreviewImages logic but triggered automatically
+        // We need to ensure we don't block the UI, so maybe run this lightly
+        try {
+            const previews = await generateAllPreviewImages();
+            if (previews) {
+                setPreviewImages(previews);
+            }
+        } catch (err) {
+            console.error("Preview generation error:", err);
+        }
+    };
+
+    // Debounce to avoid constant re-rendering during drag
+    timeoutId = setTimeout(updatePreviews, 1000);
+
+    return () => clearTimeout(timeoutId);
+  }, [canvasElements, canvasStates, selectedProduct, currentPrintAreaIndex]);
+
+  // Handle Mockup View Selection from Sidebar
+  const handleViewSelect = (view) => {
+      // Check if this view corresponds to a print area we can edit
+      const printAreaIndex = selectedProduct.printAreas.findIndex(pa => pa.name === view.name);
+      
+      if (printAreaIndex !== -1) {
+          // It's an editable side (Front/Back) - switch to it
+          switchPrintArea(printAreaIndex);
+          setActiveMockupView(view.id);
+      } else {
+          // It's a static view (Folded, Hanging) - just show it? 
+          // For now, only switch if editable. Or maybe just update active highlight.
+           setActiveMockupView(view.id);
+           toast.info(`Switched to ${view.name} view`);
+      }
+  };
+
 
   // Add shape to canvas
   const addShapeToCanvas = (shape) => {
@@ -1020,378 +1293,522 @@ const Designs = () => {
     );
   }
 
+
+
   return (
     <div className="h-screen flex flex-col overflow-hidden">
-      {/* Header with Back Button */}
+      {/* Header with Back Button and Tabs */}
+      <div className="bg-white border-b border-gray-200 px-4 py-2 flex items-center justify-between z-10">
+        <div className="flex items-center gap-4">
+            <button
+              onClick={() => navigate("/dashboard/products")}
+              className="p-2 hover:bg-gray-100 rounded-full transition-colors text-gray-600"
+            >
+              <FaArrowLeft />
+            </button>
+            <h1 className="text-xl font-bold text-gray-800">
+              Browse Products
+            </h1>
+        </div>
+        
+        {/* Central Tabs */}
+        <div className="flex bg-gray-100 p-1 rounded-lg">
+            <button
+                onClick={() => setActiveTab('design')}
+                className={`px-6 py-2 rounded-md text-sm font-semibold transition-all ${
+                    activeTab === 'design' 
+                    ? 'bg-white text-primary-600 shadow-sm' 
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
+            >
+                Edit Design
+            </button>
+            <button
+                onClick={() => setActiveTab('preview')}
+                className={`px-6 py-2 rounded-md text-sm font-semibold transition-all ${
+                    activeTab === 'preview' 
+                    ? 'bg-white text-primary-600 shadow-sm' 
+                    : 'text-gray-500 hover:text-gray-700'
+                }`}
+            >
+                Preview Mockups
+            </button>
+        </div>
+
+        <div className="flex items-center gap-3">
+             <input
+                type="text"
+                value={productName}
+                onChange={(e) => setProductName(e.target.value)}
+                placeholder="Name your design..."
+                className="px-4 py-2 border border-gray-300 rounded-full text-sm focus:ring-2 focus:ring-primary-500 focus:border-transparent outline-none w-64 transition-all"
+             />
+             <button
+              onClick={saveCustomProduct}
+              disabled={isSaving}
+              className={`flex items-center gap-2 px-6 py-2 bg-primary-600 text-white rounded-full hover:bg-primary-700 transition-colors shadow-sm disabled:opacity-50 disabled:cursor-not-allowed ${
+                isSaving ? "animate-pulse" : ""
+              }`}
+            >
+              {isSaving ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                <>
+                  <FaSave />
+                  Save Product
+                </>
+              )}
+            </button>
+        </div>
+      </div>
 
 
       <div className="flex-1 flex overflow-hidden min-h-0">
-        {/* Collapsible Sidebar */}
-        <CollapsibleSidebar
-          selectedProduct={selectedProduct}
-          onShapeAdd={addShapeToCanvas}
-          textInput={textInput}
-          setTextInput={setTextInput}
-          fontFamily={fontFamily}
-          fontWeight={fontWeight}
-          fontSize={fontSize}
-          textColor={textColor}
-          textAlign={textAlign}
-          letterSpacing={letterSpacing}
-          lineHeight={lineHeight}
-          isBold={isBold}
-          isItalic={isItalic}
-          isUnderline={isUnderline}
-          setFontFamily={setFontFamily}
-          setFontWeight={setFontWeight}
-          setFontSize={setFontSize}
-          setTextColor={setTextColor}
-          setTextAlign={setTextAlign}
-          setLetterSpacing={setLetterSpacing}
-          setLineHeight={setLineHeight}
-          setIsBold={setIsBold}
-          setIsItalic={setIsItalic}
-          setIsUnderline={setIsUnderline}
-          addTextToCanvas={addTextToCanvas}
-          designs={designs}
-          activeLibraryTab={activeLibraryTab}
-          setActiveLibraryTab={setActiveLibraryTab}
-          fileInputRef={fileInputRef}
-          handleFileUpload={handleFileUpload}
-          addDesignToCanvas={addDesignToCanvas}
-          addStockImageToCanvas={addStockImageToCanvas}
-          productName={productName}
-          setProductName={setProductName}
-          saveCustomProduct={saveCustomProduct}
-          isSaving={isSaving}
-          editingProductId={editingProductId}
-          ShapesPanel={ShapesPanel}
-          FontSelector={FontSelector}
-          StockImagesPanel={StockImagesPanel}
-        />
-
-        {/* Center - Product Mockup with Canvas Overlay (Expanded) */}
-        <div className="flex-1 bg-white shadow-soft p-4 flex flex-col ml-4">
-          <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-base font-semibold text-gray-900">
-              Product Preview
-            </h2>
-            <div className="flex items-center gap-2">
-              <button
-                onClick={() => setZoom(Math.max(0.5, zoom - 0.1))}
-                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                title="Zoom Out"
-              >
-                <FaSearchMinus />
-              </button>
-              <span className="text-sm text-gray-600 min-w-[60px] text-center">
-                {Math.round(zoom * 100)}%
-              </span>
-              <button
-                onClick={() => setZoom(Math.min(2, zoom + 0.1))}
-                className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-                title="Zoom In"
-              >
-                <FaSearchPlus />
-              </button>
-              <button
-                onClick={deleteSelected}
-                disabled={!selectedId}
-                className="p-2 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed ml-2"
-                title="Delete Selected"
-              >
-                <FaTrash />
-              </button>
-            </div>
-          </div>
-
-          {/* Print Area Toggle Buttons */}
-          {selectedProduct &&
-            selectedProduct.printAreas &&
-            selectedProduct.printAreas.length > 1 && (
-              <div className="flex items-center justify-center gap-2 mb-4">
-                {selectedProduct.printAreas.map((area, index) => (
-                  <button
-                    key={index}
-                    onClick={() => switchPrintArea(index)}
-                    className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-                      currentPrintAreaIndex === index
-                        ? "bg-gray-700 text-white"
-                        : "bg-gray-200 text-gray-700 hover:bg-gray-300"
-                    }`}
-                  >
-                    {area.name.charAt(0).toUpperCase() + area.name.slice(1)}{" "}
-                    side
-                  </button>
-                ))}
-              </div>
-            )}
-
-          {selectedProduct ? (
-            <div className="flex-1 flex items-center justify-center bg-gray-50 rounded-lg overflow-auto p-8">
-              {/* Product Mockup with Canvas Overlay */}
-              <div ref={containerRef} className="relative">
-                {/* Product Background Image */}
-                <img
-                  ref={mockupImgRef}
-                  src={
-                    selectedProduct.mockupImages?.[
-                      selectedProduct.printAreas[currentPrintAreaIndex].name
-                    ] || selectedProduct.image
-                  }
-                  alt={selectedProduct.name}
-                  className="block max-w-full max-h-[80vh] object-contain"
-                  style={{ pointerEvents: "none" }}
-                  onLoad={handleMockupLoad}
+        {/* Render content based on active tab */}
+        {activeTab === 'design' ? (
+            <>
+                {/* Collapsible Sidebar */}
+                <CollapsibleSidebar
+                  selectedProduct={selectedProduct}
+                  onShapeAdd={addShapeToCanvas}
+                  textInput={textInput}
+                  setTextInput={setTextInput}
+                  fontFamily={fontFamily}
+                  fontWeight={fontWeight}
+                  fontSize={fontSize}
+                  textColor={textColor}
+                  textAlign={textAlign}
+                  letterSpacing={letterSpacing}
+                  lineHeight={lineHeight}
+                  isBold={isBold}
+                  isItalic={isItalic}
+                  isUnderline={isUnderline}
+                  setFontFamily={setFontFamily}
+                  setFontWeight={setFontWeight}
+                  setFontSize={setFontSize}
+                  setTextColor={setTextColor}
+                  setTextAlign={setTextAlign}
+                  setLetterSpacing={setLetterSpacing}
+                  setLineHeight={setLineHeight}
+                  setIsBold={setIsBold}
+                  setIsItalic={setIsItalic}
+                  setIsUnderline={setIsUnderline}
+                  addTextToCanvas={addTextToCanvas}
+                  designs={designs}
+                  activeLibraryTab={activeLibraryTab}
+                  setActiveLibraryTab={setActiveLibraryTab}
+                  fileInputRef={fileInputRef}
+                  handleFileUpload={handleFileUpload}
+                  addDesignToCanvas={addDesignToCanvas}
+                  addStockImageToCanvas={addStockImageToCanvas}
+                  productName={productName}
+                  setProductName={setProductName}
+                  saveCustomProduct={saveCustomProduct}
+                  isSaving={isSaving}
+                  editingProductId={editingProductId}
+                  ShapesPanel={ShapesPanel}
+                  FontSelector={FontSelector}
+                  StockImagesPanel={StockImagesPanel}
                 />
-
-                {/* Design Canvas Overlay on Print Area */}
-                <div
-                  className="absolute overflow-hidden"
-                  style={{
-                    opacity:
-                      mockupDimensions && mockupImgRef.current?.offsetWidth > 0
-                        ? 1
-                        : 0,
-                    left: (() => {
-                      if (!mockupImgRef.current || !mockupDimensions) return 0;
-                      const scale =
-                        mockupImgRef.current.offsetWidth /
-                        mockupDimensions.width;
-                      return (
-                        selectedProduct.printAreas[currentPrintAreaIndex].x *
-                        scale
-                      );
-                    })(),
-                    top: (() => {
-                      if (!mockupImgRef.current || !mockupDimensions) return 0;
-                      const scale =
-                        mockupImgRef.current.offsetWidth /
-                        mockupDimensions.width;
-                      return (
-                        selectedProduct.printAreas[currentPrintAreaIndex].y *
-                        scale
-                      );
-                    })(),
-                    width: (() => {
-                      if (!mockupImgRef.current || !mockupDimensions) return 0;
-                      const scale =
-                        mockupImgRef.current.offsetWidth /
-                        mockupDimensions.width;
-                      return (
-                        selectedProduct.printAreas[currentPrintAreaIndex]
-                          .width * scale
-                      );
-                    })(),
-                    height: (() => {
-                      if (!mockupImgRef.current || !mockupDimensions) return 0;
-                      const scale =
-                        mockupImgRef.current.offsetWidth /
-                        mockupDimensions.width;
-                      return (
-                        selectedProduct.printAreas[currentPrintAreaIndex]
-                          .height * scale
-                      );
-                    })(),
-                  }}
-                >
-                  <Stage
-                    ref={stageRef}
-                    width={
-                      selectedProduct.printAreas[currentPrintAreaIndex].width *
-                      (() => {
-                        if (!mockupImgRef.current || !mockupDimensions)
-                          return zoom;
-                        const scale =
-                          mockupImgRef.current.offsetWidth /
-                          mockupDimensions.width;
-                        return zoom * scale;
-                      })()
-                    }
-                    height={
-                      selectedProduct.printAreas[currentPrintAreaIndex].height *
-                      (() => {
-                        if (!mockupImgRef.current || !mockupDimensions)
-                          return zoom;
-                        const scale =
-                          mockupImgRef.current.offsetWidth /
-                          mockupDimensions.width;
-                        return zoom * scale;
-                      })()
-                    }
-                    onMouseDown={checkDeselect}
-                    onTouchStart={checkDeselect}
-                    scaleX={(() => {
-                      if (!mockupImgRef.current || !mockupDimensions)
-                        return zoom;
-                      const scale =
-                        mockupImgRef.current.offsetWidth /
-                        mockupDimensions.width;
-                      return zoom * scale;
-                    })()}
-                    scaleY={(() => {
-                      if (!mockupImgRef.current || !mockupDimensions)
-                        return zoom;
-                      const scale =
-                        mockupImgRef.current.offsetWidth /
-                        mockupDimensions.width;
-                      return zoom * scale;
-                    })()}
-                  >
-                    <Layer>
-                      {/* Print area outline - dashed border */}
-                      <Rect
-                        x={0}
-                        y={0}
-                        width={
-                          selectedProduct.printAreas[currentPrintAreaIndex]
-                            .width
-                        }
-                        height={
-                          selectedProduct.printAreas[currentPrintAreaIndex]
-                            .height
-                        }
-                        stroke="#39B54A"
-                        strokeWidth={2 / zoom}
-                        dash={[10 / zoom, 5 / zoom]}
-                      />
-
-                      {/* Design elements */}
-                      {canvasElements.map((element) => {
-                        if (element.type === "image") {
-                          return (
-                            <DesignImage
-                              key={element.id}
-                              image={element}
-                              isSelected={element.id === selectedId}
-                              onSelect={() => setSelectedId(element.id)}
-                              onChange={(newAttrs) => {
-                                setCanvasElements((prev) =>
-                                  prev.map((el) =>
-                                    el.id === element.id ? newAttrs : el
-                                  )
-                                );
-                              }}
+        
+                {/* Center - Product Editor */}
+                <div className="flex-1 bg-white shadow-soft p-4 flex flex-col ml-4 relative">
+                  <div className="mb-3 flex items-center justify-between">
+                    <h2 className="text-base font-semibold text-gray-900">
+                      Editor
+                    </h2>
+                    <div className="flex items-center gap-2">
+                         {/* Zoom and Delete Controls */}
+                      <button
+                        onClick={() => setZoom(Math.max(0.5, zoom - 0.1))}
+                        className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                        title="Zoom Out"
+                      >
+                        <FaSearchMinus />
+                      </button>
+                      <span className="text-sm text-gray-600 min-w-[60px] text-center">
+                        {Math.round(zoom * 100)}%
+                      </span>
+                      <button
+                        onClick={() => setZoom(Math.min(2, zoom + 0.1))}
+                        className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                        title="Zoom In"
+                      >
+                        <FaSearchPlus />
+                      </button>
+                      <button
+                        onClick={deleteSelected}
+                        disabled={!selectedId}
+                        className="p-2 hover:bg-gray-100 rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed ml-2"
+                        title="Delete Selected"
+                      >
+                        <FaTrash />
+                      </button>
+                    </div>
+                  </div>
+        
+                  {/* Print Area Toggle Buttons */}
+                  {selectedProduct &&
+                    selectedProduct.printAreas &&
+                    selectedProduct.printAreas.length > 1 && (
+                      <div className="flex items-center justify-center gap-2 mb-4">
+                        {selectedProduct.printAreas.map((area, index) => (
+                          <button
+                            key={index}
+                            onClick={() => switchPrintArea(index)}
+                            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
+                              currentPrintAreaIndex === index
+                                ? "bg-gray-700 text-white"
+                                : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                            }`}
+                          >
+                            {area.name.charAt(0).toUpperCase() + area.name.slice(1)}{" "}
+                            side
+                          </button>
+                        ))}
+                      </div>
+                    )}
+        
+                  {selectedProduct ? (
+                    <div className="flex-1 flex items-center justify-center bg-gray-50 rounded-lg overflow-auto p-8 relative">
+                          <div ref={containerRef} className="relative">
+                            {/* Product Background Image */}
+                            <img
+                              ref={mockupImgRef}
+                              src={
+                                selectedProduct.mockupImages?.[
+                                  selectedProduct.printAreas[currentPrintAreaIndex].name
+                                ] || selectedProduct.image
+                              }
+                              alt={selectedProduct.name}
+                              className="block max-w-full max-h-[80vh] object-contain"
+                              style={{ pointerEvents: "none" }}
+                              onLoad={handleMockupLoad}
                             />
-                          );
-                        } else if (element.type === "text") {
-                          return (
-                            <DesignText
-                              key={element.id}
-                              text={element}
-                              isSelected={element.id === selectedId}
-                              onSelect={() => setSelectedId(element.id)}
-                              onChange={(newAttrs) => {
-                                setCanvasElements((prev) =>
-                                  prev.map((el) =>
-                                    el.id === element.id ? newAttrs : el
-                                  )
-                                );
+            
+                            {/* Design Canvas Overlay on Print Area */}
+                            <div
+                              className="absolute overflow-hidden"
+                              style={{
+                                opacity:
+                                  mockupDimensions && mockupImgRef.current?.offsetWidth > 0
+                                    ? 1
+                                    : 0,
+                                left: (() => {
+                                  if (!mockupImgRef.current || !mockupDimensions) return 0;
+                                  const scale =
+                                    mockupImgRef.current.offsetWidth /
+                                    mockupDimensions.width;
+                                  return (
+                                    selectedProduct.printAreas[currentPrintAreaIndex].x *
+                                    scale
+                                  );
+                                })(),
+                                top: (() => {
+                                  if (!mockupImgRef.current || !mockupDimensions) return 0;
+                                  const scale =
+                                    mockupImgRef.current.offsetWidth /
+                                    mockupDimensions.width;
+                                  return (
+                                    selectedProduct.printAreas[currentPrintAreaIndex].y *
+                                    scale
+                                  );
+                                })(),
+                                width: (() => {
+                                  if (!mockupImgRef.current || !mockupDimensions) return 0;
+                                  const scale =
+                                    mockupImgRef.current.offsetWidth /
+                                    mockupDimensions.width;
+                                  return (
+                                    selectedProduct.printAreas[currentPrintAreaIndex]
+                                      .width * scale
+                                  );
+                                })(),
+                                height: (() => {
+                                  if (!mockupImgRef.current || !mockupDimensions) return 0;
+                                  const scale =
+                                    mockupImgRef.current.offsetWidth /
+                                    mockupDimensions.width;
+                                  return (
+                                    selectedProduct.printAreas[currentPrintAreaIndex]
+                                      .height * scale
+                                  );
+                                })(),
                               }}
-                            />
-                          );
-                        } else if (element.type === "rectangle") {
-                          return (
-                            <DesignRect
-                              key={element.id}
-                              shape={element}
-                              isSelected={element.id === selectedId}
-                              onSelect={() => setSelectedId(element.id)}
-                              onChange={(newAttrs) => {
-                                setCanvasElements((prev) =>
-                                  prev.map((el) =>
-                                    el.id === element.id ? newAttrs : el
-                                  )
-                                );
-                              }}
-                            />
-                          );
-                        } else if (element.type === "circle") {
-                          return (
-                            <DesignCircle
-                              key={element.id}
-                              shape={element}
-                              isSelected={element.id === selectedId}
-                              onSelect={() => setSelectedId(element.id)}
-                              onChange={(newAttrs) => {
-                                setCanvasElements((prev) =>
-                                  prev.map((el) =>
-                                    el.id === element.id ? newAttrs : el
-                                  )
-                                );
-                              }}
-                            />
-                          );
-                        } else if (element.type === "line") {
-                          return (
-                            <DesignLine
-                              key={element.id}
-                              shape={element}
-                              isSelected={element.id === selectedId}
-                              onSelect={() => setSelectedId(element.id)}
-                              onChange={(newAttrs) => {
-                                setCanvasElements((prev) =>
-                                  prev.map((el) =>
-                                    el.id === element.id ? newAttrs : el
-                                  )
-                                );
-                              }}
-                            />
-                          );
-                        } else if (element.type === "arrow") {
-                          return (
-                            <DesignArrow
-                              key={element.id}
-                              shape={element}
-                              isSelected={element.id === selectedId}
-                              onSelect={() => setSelectedId(element.id)}
-                              onChange={(newAttrs) => {
-                                setCanvasElements((prev) =>
-                                  prev.map((el) =>
-                                    el.id === element.id ? newAttrs : el
-                                  )
-                                );
-                              }}
-                            />
-                          );
-                        } else if (element.type === "star") {
-                          return (
-                            <DesignStar
-                              key={element.id}
-                              shape={element}
-                              isSelected={element.id === selectedId}
-                              onSelect={() => setSelectedId(element.id)}
-                              onChange={(newAttrs) => {
-                                setCanvasElements((prev) =>
-                                  prev.map((el) =>
-                                    el.id === element.id ? newAttrs : el
-                                  )
-                                );
-                              }}
-                            />
-                          );
-                        }
-                        return null;
-                      })}
-                    </Layer>
-                  </Stage>
+                            >
+                              <Stage
+                                ref={stageRef}
+                                width={
+                                  selectedProduct.printAreas[currentPrintAreaIndex].width *
+                                  (() => {
+                                    if (!mockupImgRef.current || !mockupDimensions)
+                                      return zoom;
+                                    const scale =
+                                      mockupImgRef.current.offsetWidth /
+                                      mockupDimensions.width;
+                                    return zoom * scale;
+                                  })()
+                                }
+                                height={
+                                  selectedProduct.printAreas[currentPrintAreaIndex].height *
+                                  (() => {
+                                    if (!mockupImgRef.current || !mockupDimensions)
+                                      return zoom;
+                                    const scale =
+                                      mockupImgRef.current.offsetWidth /
+                                      mockupDimensions.width;
+                                    return zoom * scale;
+                                  })()
+                                }
+                                onMouseDown={checkDeselect}
+                                onTouchStart={checkDeselect}
+                                scaleX={(() => {
+                                  if (!mockupImgRef.current || !mockupDimensions)
+                                    return zoom;
+                                  const scale =
+                                    mockupImgRef.current.offsetWidth /
+                                    mockupDimensions.width;
+                                  return zoom * scale;
+                                })()}
+                                scaleY={(() => {
+                                  if (!mockupImgRef.current || !mockupDimensions)
+                                    return zoom;
+                                  const scale =
+                                    mockupImgRef.current.offsetWidth /
+                                    mockupDimensions.width;
+                                  return zoom * scale;
+                                })()}
+                              >
+                                <Layer>
+                                  {/* Print area outline - dashed border */}
+                                  <Rect
+                                    x={0}
+                                    y={0}
+                                    width={
+                                      selectedProduct.printAreas[currentPrintAreaIndex]
+                                        .width
+                                    }
+                                    height={
+                                      selectedProduct.printAreas[currentPrintAreaIndex]
+                                        .height
+                                    }
+                                    stroke="#39B54A"
+                                    strokeWidth={2 / zoom}
+                                    dash={[10 / zoom, 5 / zoom]}
+                                  />
+            
+                                  {/* Design elements */}
+                                  {canvasElements.map((element) => {
+                                    if (element.type === "image") {
+                                      return (
+                                        <DesignImage
+                                          key={element.id}
+                                          image={element}
+                                          isSelected={element.id === selectedId}
+                                          onSelect={() => setSelectedId(element.id)}
+                                          onChange={(newAttrs) => {
+                                            setCanvasElements((prev) =>
+                                              prev.map((el) =>
+                                                el.id === element.id ? newAttrs : el
+                                              )
+                                            );
+                                          }}
+                                        />
+                                      );
+                                    } else if (element.type === "text") {
+                                      return (
+                                        <DesignText
+                                          key={element.id}
+                                          text={element}
+                                          isSelected={element.id === selectedId}
+                                          onSelect={() => setSelectedId(element.id)}
+                                          onChange={(newAttrs) => {
+                                            setCanvasElements((prev) =>
+                                              prev.map((el) =>
+                                                el.id === element.id ? newAttrs : el
+                                              )
+                                            );
+                                          }}
+                                        />
+                                      );
+                                    } else if (element.type === "rectangle") {
+                                      return (
+                                        <DesignRect
+                                          key={element.id}
+                                          shape={element}
+                                          isSelected={element.id === selectedId}
+                                          onSelect={() => setSelectedId(element.id)}
+                                          onChange={(newAttrs) => {
+                                            setCanvasElements((prev) =>
+                                              prev.map((el) =>
+                                                el.id === element.id ? newAttrs : el
+                                              )
+                                            );
+                                          }}
+                                        />
+                                      );
+                                    } else if (element.type === "circle") {
+                                      return (
+                                        <DesignCircle
+                                          key={element.id}
+                                          shape={element}
+                                          isSelected={element.id === selectedId}
+                                          onSelect={() => setSelectedId(element.id)}
+                                          onChange={(newAttrs) => {
+                                            setCanvasElements((prev) =>
+                                              prev.map((el) =>
+                                                el.id === element.id ? newAttrs : el
+                                              )
+                                            );
+                                          }}
+                                        />
+                                      );
+                                    } else if (element.type === "line") {
+                                      return (
+                                        <DesignLine
+                                          key={element.id}
+                                          shape={element}
+                                          isSelected={element.id === selectedId}
+                                          onSelect={() => setSelectedId(element.id)}
+                                          onChange={(newAttrs) => {
+                                            setCanvasElements((prev) =>
+                                              prev.map((el) =>
+                                                el.id === element.id ? newAttrs : el
+                                              )
+                                            );
+                                          }}
+                                        />
+                                      );
+                                    } else if (element.type === "arrow") {
+                                      return (
+                                        <DesignArrow
+                                          key={element.id}
+                                          shape={element}
+                                          isSelected={element.id === selectedId}
+                                          onSelect={() => setSelectedId(element.id)}
+                                          onChange={(newAttrs) => {
+                                            setCanvasElements((prev) =>
+                                              prev.map((el) =>
+                                                el.id === element.id ? newAttrs : el
+                                              )
+                                            );
+                                          }}
+                                        />
+                                      );
+                                    } else if (element.type === "star") {
+                                      return (
+                                        <DesignStar
+                                          key={element.id}
+                                          shape={element}
+                                          isSelected={element.id === selectedId}
+                                          onSelect={() => setSelectedId(element.id)}
+                                          onChange={(newAttrs) => {
+                                            setCanvasElements((prev) =>
+                                              prev.map((el) =>
+                                                el.id === element.id ? newAttrs : el
+                                              )
+                                            );
+                                          }}
+                                        />
+                                      );
+                                    }
+                                    return null;
+                                  })}
+                                </Layer>
+                              </Stage>
+                            </div>
+                          </div>
+                    </div>
+                  ) : (
+                    <div className="flex-1 flex items-center justify-center bg-gray-50 rounded-lg">
+                      <div className="text-center">
+                        <FaTshirt className="text-6xl text-gray-300 mx-auto mb-4" />
+                        <p className="text-gray-500 text-lg font-medium">
+                          Select a product to start designing
+                        </p>
+                        <p className="text-gray-400 text-sm mt-2">
+                          Choose a product from the right sidebar
+                        </p>
+                      </div>
+                    </div>
+                  )}
                 </div>
-              </div>
+                
+                {/* Mockup Sidebar - Only in Design Mode */}
+                {selectedProduct && selectedProduct.printAreas && selectedProduct.printAreas.length > 1 && (
+                     // Optional: Could remove this if the top Preview tab is enough. 
+                     // But user might still want to switch sides easily.
+                     // Keeping it for now but simplified to just side switcher? 
+                     // Or just using the top buttons?
+                     // Let's hide the mockup sidebar as requested ("make the preview like a different page")
+                     // and rely on the Preview Tab for the full experience.
+                     null
+                )}
+            </>
+        ) : (
+            // Preview Tab Content
+            <div className="flex-1 overflow-auto bg-gray-50 p-8">
+                <div className="max-w-6xl mx-auto">
+                    <div className="flex justify-between items-center mb-6">
+                        <h2 className="text-2xl font-bold text-gray-800">Product Previews</h2>
+                        <button
+                            onClick={async () => {
+                                const previews = await generateAllPreviewImages();
+                                if (previews) {
+                                    setPreviewImages(previews);
+                                    toast.success('Previews regenerated!');
+                                }
+                            }}
+                            className="px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors text-sm font-medium"
+                        >
+                            Regenerate Previews
+                        </button>
+                    </div>
+                    
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-8">
+                        {/* Standard Views (Front/Back) */}
+                        {selectedProduct.printAreas.map((area) => (
+                             <div key={area.name} className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex flex-col items-center">
+                                <h3 className="font-semibold text-gray-700 mb-4 capitalize">{area.name} View</h3>
+                                <div className="relative w-full aspect-square flex items-center justify-center bg-gray-50 rounded-lg overflow-hidden">
+                                     {previewImages[area.name] ? (
+                                         <img src={previewImages[area.name]} alt={area.name} className="max-h-full max-w-full object-contain" />
+                                     ) : (
+                                         null
+                                     )}
+                                </div>
+                             </div>
+                        ))}
+                        
+                        {/* Extra Views (Folded/Hanging) */}
+                        <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex flex-col items-center">
+                            <h3 className="font-semibold text-gray-700 mb-4">Folded View</h3>
+                            <div className="relative w-full aspect-square flex items-center justify-center bg-gray-50 rounded-lg overflow-hidden">
+                                 {previewImages['folded'] ? (
+                                     <img src={previewImages['folded']} alt="Folded" className="max-h-full max-w-full object-contain" />
+                                 ) : (
+                                     null
+                                 )}
+                            </div>
+                        </div>
+                        
+                        <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100 flex flex-col items-center">
+                            <h3 className="font-semibold text-gray-700 mb-4">Hanging View</h3>
+                             <div className="relative w-full aspect-square flex items-center justify-center bg-gray-50 rounded-lg overflow-hidden">
+                                 {previewImages['hanging'] ? (
+                                     <img src={previewImages['hanging']} alt="Hanging" className="max-h-full max-w-full object-contain" />
+                                 ) : (
+                                     null
+                                 )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
             </div>
-          ) : (
-            <div className="flex-1 flex items-center justify-center bg-gray-50 rounded-lg">
-              <div className="text-center">
-                <FaTshirt className="text-6xl text-gray-300 mx-auto mb-4" />
-                <p className="text-gray-500 text-lg font-medium">
-                  Select a product to start designing
-                </p>
-                <p className="text-gray-400 text-sm mt-2">
-                  Choose a product from the right sidebar
-                </p>
-              </div>
-            </div>
-          )}
-        </div>
+        )}
       </div>
     </div>
   );

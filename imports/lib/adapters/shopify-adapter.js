@@ -41,43 +41,121 @@ export class ShopifyAdapter extends IntegrationAdapter {
         throw new Error('Shopify tokens do not require refresh');
     }
 
-    async syncProduct(product, variants, design) {
-        console.log('📦 [MOCK] Syncing product to Shopify:', product.name);
+    async syncProduct(product, variants, design, store) {
+        console.log('📦 Syncing product to Shopify:', product.name);
 
-        // Mock product creation
-        const externalProductId = `shopify_${crypto.randomBytes(8).toString('hex')}`;
+        if (!store || !store.accessToken) {
+            throw new Error('Store or access token not provided');
+        }
 
-        // In production, this would make actual API calls to Shopify
-        const mockProduct = {
-            id: externalProductId,
-            title: product.name,
-            body_html: product.description,
-            vendor: 'Printify Clone',
-            product_type: product.type,
-            variants: variants.map(v => ({
-                id: `variant_${crypto.randomBytes(4).toString('hex')}`,
-                title: `${v.size} / ${v.color}`,
-                price: ((product.basePrice + v.priceModifier) / 100).toFixed(2),
-                sku: v.sku,
-                inventory_quantity: v.inStock ? 100 : 0
-            })),
-            images: design ? [{
-                src: design.originalFileUrl,
-                alt: design.name
-            }] : []
+        // Build Shopify product object
+        const shopifyProduct = {
+            product: {
+                title: product.name,
+                body_html: product.description || '',
+                vendor: 'Printify Clone',
+                product_type: product.category || 'Custom Products',
+                tags: product.tags?.join(',') || '',
+                variants: variants && variants.length > 0 ? variants.map(v => ({
+                    title: `${v.size || 'Default'} / ${v.color || 'Default'}`,
+                    price: v.price ? (v.price / 100).toFixed(2) : (product.price / 100).toFixed(2),
+                    sku: v.sku || `${product._id}-${v._id || 'default'}`,
+                    inventory_quantity: 999, // Print-on-demand - unlimited stock
+                    inventory_management: null, // Don't track inventory for POD
+                    fulfillment_service: 'manual'
+                })) : [{
+                    // Default variant if no variants provided
+                    title: 'Default',
+                    price: (product.price / 100).toFixed(2),
+                    sku: `${product._id}-default`,
+                    inventory_quantity: 999,
+                    inventory_management: null,
+                    fulfillment_service: 'manual'
+                }],
+                images: design && design.originalFileUrl ? [{
+                    src: design.originalFileUrl,
+                    alt: product.name
+                }] : []
+            }
         };
 
-        console.log('✅ [MOCK] Product synced to Shopify:', externalProductId);
+        // Make API call to Shopify using fetch
+        const url = `https://${store.platformStoreId}/admin/api/2024-01/products.json`;
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Shopify-Access-Token': store.accessToken
+            },
+            body: JSON.stringify(shopifyProduct)
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Shopify API error: ${response.status} - ${errorText}`);
+        }
+
+        const data = await response.json();
+        const externalProductId = data.product.id.toString();
+        console.log('✅ Product synced to Shopify:', externalProductId);
+        
         return externalProductId;
     }
 
-    async updateProduct(externalProductId, updates) {
-        console.log('🔄 [MOCK] Updating Shopify product:', externalProductId, updates);
+    async updateProduct(externalProductId, updates, store) {
+        console.log('🔄 Updating Shopify product:', externalProductId);
+
+        if (!store || !store.accessToken) {
+            throw new Error('Store or access token not provided');
+        }
+
+        // Build update object
+        const shopifyUpdate = {
+            product: updates
+        };
+
+        // Make API call to update product
+        const url = `https://${store.platformStoreId}/admin/api/2024-01/products/${externalProductId}.json`;
+        const response = await fetch(url, {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-Shopify-Access-Token': store.accessToken
+            },
+            body: JSON.stringify(shopifyUpdate)
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Shopify API error: ${response.status} - ${errorText}`);
+        }
+
+        console.log('✅ Product updated on Shopify:', externalProductId);
         return true;
     }
 
-    async deleteProduct(externalProductId) {
-        console.log('🗑️  [MOCK] Deleting Shopify product:', externalProductId);
+    async deleteProduct(externalProductId, store) {
+        console.log('🗑️  Deleting Shopify product:', externalProductId);
+
+        if (!store || !store.accessToken) {
+            throw new Error('Store or access token not provided');
+        }
+
+        // Make API call to delete product
+        const url = `https://${store.platformStoreId}/admin/api/2024-01/products/${externalProductId}.json`;
+        const response = await fetch(url, {
+            method: 'DELETE',
+            headers: {
+                'X-Shopify-Access-Token': store.accessToken
+            }
+        });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            throw new Error(`Shopify API error: ${response.status} - ${errorText}`);
+        }
+
+        console.log('✅ Product deleted from Shopify:', externalProductId);
         return true;
     }
 

@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useEffect } from "react";
 import {
   BrowserRouter as Router,
   Routes,
@@ -38,6 +38,20 @@ import ManageProviders from "./pages/Dashboard/ManageProviders";
 import { CheckoutSuccessPage, CheckoutCancelPage } from "./pages/Checkout/CheckoutPage";
 
 export const App = () => {
+  // Handle Shopify OAuth redirect
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get('code');
+    const hmac = params.get('hmac');
+    const shop = params.get('shop');
+    
+    // If we have OAuth params on the homepage, redirect to callback
+    if (code && hmac && shop && window.location.pathname === '/') {
+      console.log('Detected Shopify OAuth params, redirecting to callback...');
+      window.location.href = `/api/oauth/shopify/callback${window.location.search}`;
+    }
+  }, []);
+
   return (
     <AuthProvider>
       <Router>

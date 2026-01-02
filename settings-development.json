@@ -10,9 +10,11 @@
         "clientSecret": "MOCK_GOOGLE_CLIENT_SECRET"
       },
       "shopify": {
-        "apiKey": "MOCK_SHOPIFY_API_KEY",
-        "apiSecret": "MOCK_SHOPIFY_API_SECRET",
-        "scopes": "read_products,write_products,read_orders,write_orders,read_fulfillments,write_fulfillments"
+        "apiKey": "3552046940d16e8a0115d8fc3992bf03",
+        "apiSecret": "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",
+        "webhookSecret": "73307f54b8ab34eec9aabe54f45573091d97c6234f7d75430f391fc15765f16c",
+        "scopes": "read_products,write_products,read_orders,write_orders,read_fulfillments,write_fulfillments",
+        "apiVersion": "2026-01"
       }
     },
     "stripe": {

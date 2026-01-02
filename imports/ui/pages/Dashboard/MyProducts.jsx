@@ -10,19 +10,23 @@ import {
   FaShoppingCart,
   FaTimes,
   FaCopy,
+  FaShopify,
 } from "react-icons/fa";
 import { toast } from "react-toastify";
 import { UserProducts } from "../../../api/collections/UserProducts";
 import { Products } from "../../../api/collections/products";
+import { Stores } from "../../../api/collections/stores";
 
 const MyProducts = () => {
   // Fetch user products from database
-  const { products, productsLoading, baseProducts } = useTracker(() => {
+  const { products, productsLoading, baseProducts, shopifyStores } = useTracker(() => {
     const userProductsHandle = Meteor.subscribe("userProducts.mine");
     const productsHandle = Meteor.subscribe("products.all");
+    const storesHandle = Meteor.subscribe("stores.mine");
 
     const userProducts = UserProducts.find({}).fetch();
     const allProducts = Products.find({}).fetch();
+    const stores = Stores.find({ platform: 'shopify', status: 'active' }).fetch();
 
     // Map user products with base product info
     const mappedProducts = userProducts.map((up) => {
@@ -50,13 +54,15 @@ const MyProducts = () => {
         status: up.status,
         sales: up.sales || 0,
         createdAt: up.createdAt,
+        shopifyProducts: up.shopifyProducts || [], // Shopify sync status
       };
     });
 
     return {
       products: mappedProducts,
-      productsLoading: !userProductsHandle.ready() || !productsHandle.ready(),
+      productsLoading: !userProductsHandle.ready() || !productsHandle.ready() || !storesHandle.ready(),
       baseProducts: allProducts,
+      shopifyStores: stores,
     };
   }, []);
 
@@ -64,6 +70,10 @@ const MyProducts = () => {
   const [showModal, setShowModal] = useState(false);
   const [filterStatus, setFilterStatus] = useState("all");
   const [selectedView, setSelectedView] = useState("front"); // For toggling between front/back in modal
+  const [showShopifyModal, setShowShopifyModal] = useState(false);
+  const [selectedProductForShopify, setSelectedProductForShopify] = useState(null);
+  const [selectedStore, setSelectedStore] = useState("");
+  const [isPublishing, setIsPublishing] = useState(false);
 
   const filteredProducts = products.filter((p) =>
     filterStatus === "all" ? true : p.status === filterStatus
@@ -125,6 +135,44 @@ const MyProducts = () => {
   const closeModal = () => {
     setShowModal(false);
     setSelectedProduct(null);
+  };
+
+  const openShopifyModal = (product) => {
+    setSelectedProductForShopify(product);
+    setShowShopifyModal(true);
+    setSelectedStore(shopifyStores[0]?._id || "");
+  };
+
+  const closeShopifyModal = () => {
+    setShowShopifyModal(false);
+    setSelectedProductForShopify(null);
+    setSelectedStore("");
+  };
+
+  const handlePublishToShopify = () => {
+    if (!selectedStore) {
+      toast.error("Please select a store");
+      return;
+    }
+
+    setIsPublishing(true);
+
+    Meteor.call(
+      "products.syncToShopify",
+      selectedProductForShopify.id,
+      selectedStore,
+      (error, result) => {
+        setIsPublishing(false);
+
+        if (error) {
+          toast.error(`Failed to publish: ${error.message}`);
+          console.error(error);
+        } else {
+          toast.success("Product published to Shopify successfully!");
+          closeShopifyModal();
+        }
+      }
+    );
   };
 
   return (
@@ -290,40 +338,53 @@ const MyProducts = () => {
                     </p>
 
                     {/* Actions */}
-                    <div className="grid grid-cols-2 gap-2">
-                      <button
-                        onClick={() => openProductDetails(product)}
-                        className="flex items-center justify-center gap-2 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors text-sm"
-                      >
-                        <FaEye />
-                        View
-                      </button>
-                      <button
-                        onClick={() => toggleStatus(product.id)}
-                        className={`px-3 py-2 rounded-lg transition-colors text-sm font-medium ${
-                          product.status === "published"
-                            ? "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                            : "bg-primary-500 text-white hover:bg-primary-600"
-                        }`}
-                      >
-                        {product.status === "published"
-                          ? "Unpublish"
-                          : "Publish"}
-                      </button>
-                      <button
-                        onClick={() => handleDuplicate(product.id)}
-                        className="flex items-center justify-center gap-2 px-3 py-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors text-sm"
-                      >
-                        <FaCopy />
-                        Duplicate
-                      </button>
-                      <button
-                        onClick={() => handleDelete(product.id)}
-                        className="flex items-center justify-center gap-2 px-3 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors text-sm"
-                      >
-                        <FaTrash />
-                        Delete
-                      </button>
+                    <div className="space-y-2">
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          onClick={() => openProductDetails(product)}
+                          className="flex items-center justify-center gap-2 px-3 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors text-sm"
+                        >
+                          <FaEye />
+                          View
+                        </button>
+                        <button
+                          onClick={() => toggleStatus(product.id)}
+                          className={`px-3 py-2 rounded-lg transition-colors text-sm font-medium ${
+                            product.status === "published"
+                              ? "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                              : "bg-primary-500 text-white hover:bg-primary-600"
+                          }`}
+                        >
+                          {product.status === "published"
+                            ? "Unpublish"
+                            : "Publish"}
+                        </button>
+                        <button
+                          onClick={() => handleDuplicate(product.id)}
+                          className="flex items-center justify-center gap-2 px-3 py-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors text-sm"
+                        >
+                          <FaCopy />
+                          Duplicate
+                        </button>
+                        <button
+                          onClick={() => handleDelete(product.id)}
+                          className="flex items-center justify-center gap-2 px-3 py-2 bg-red-50 text-red-600 rounded-lg hover:bg-red-100 transition-colors text-sm"
+                        >
+                          <FaTrash />
+                          Delete
+                        </button>
+                      </div>
+                      
+                      {/* Shopify Publish Button */}
+                      {shopifyStores.length > 0 && (
+                        <button
+                          onClick={() => openShopifyModal(product)}
+                          className="w-full flex items-center justify-center gap-2 px-3 py-2 bg-green-50 text-green-700 rounded-lg hover:bg-green-100 transition-colors text-sm font-medium border border-green-200"
+                        >
+                          <FaShopify />
+                          Publish to Shopify
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -485,6 +546,94 @@ const MyProducts = () => {
                         </button>
                       </div>
                     </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Shopify Store Selection Modal */}
+          {showShopifyModal && selectedProductForShopify && (
+            <div
+              className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4"
+              onClick={closeShopifyModal}
+            >
+              <div
+                className="bg-white rounded-xl max-w-md w-full p-6"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex justify-between items-center mb-4">
+                  <h2 className="text-2xl font-bold text-gray-900">
+                    Publish to Shopify
+                  </h2>
+                  <button
+                    onClick={closeShopifyModal}
+                    className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
+                  >
+                    <FaTimes className="text-xl text-gray-600" />
+                  </button>
+                </div>
+
+                <div className="space-y-4">
+                  <div>
+                    <p className="text-gray-600 mb-2">
+                      Product: <span className="font-semibold">{selectedProductForShopify.name}</span>
+                    </p>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Select Shopify Store
+                    </label>
+                    {shopifyStores.length === 0 ? (
+                      <div className="text-center py-4">
+                        <p className="text-gray-600 mb-3">No Shopify stores connected</p>
+                        <Link
+                          to="/dashboard/stores"
+                          className="text-primary-600 hover:text-primary-700 font-medium"
+                        >
+                          Connect a Shopify store
+                        </Link>
+                      </div>
+                    ) : (
+                      <select
+                        value={selectedStore}
+                        onChange={(e) => setSelectedStore(e.target.value)}
+                        className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent"
+                      >
+                        {shopifyStores.map((store) => (
+                          <option key={store._id} value={store._id}>
+                            {store.name} ({store.platformStoreId})
+                          </option>
+                        ))}
+                      </select>
+                    )}
+                  </div>
+
+                  <div className="flex gap-3 pt-4">
+                    <button
+                      onClick={closeShopifyModal}
+                      className="flex-1 px-4 py-2 bg-gray-200 text-gray-700 rounded-lg hover:bg-gray-300 transition-colors font-medium"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={handlePublishToShopify}
+                      disabled={isPublishing || !selectedStore}
+                      className="flex-1 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+                    >
+                      {isPublishing ? (
+                        <>
+                          <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white"></div>
+                          Publishing...
+                        </>
+                      ) : (
+                        <>
+                          <FaShopify />
+                          Publish
+                        </>
+                      )}
+                    </button>
                   </div>
                 </div>
               </div>
